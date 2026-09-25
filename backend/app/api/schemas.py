@@ -93,6 +93,7 @@ class CaseOut(BaseModel):
     start: str
     end: str
     duration_seconds: float
+    trace: list[str] = Field(description="Aktivitäten des Falls in zeitlicher Reihenfolge")
 
 
 class CasePage(BaseModel):

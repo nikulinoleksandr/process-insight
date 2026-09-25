@@ -32,7 +32,11 @@ class ProcessMap(BaseModel):
 
 
 def build_process_map(
-    log: pd.DataFrame, detail: float = 1.0, max_edges: int | None = None
+    log: pd.DataFrame,
+    detail: float = 1.0,
+    max_edges: int | None = None,
+    focus_nodes: set[str] | None = None,
+    focus_edges: set[tuple[str, str]] | None = None,
 ) -> ProcessMap:
     """Baut die Prozesslandkarte.
 
@@ -42,6 +46,9 @@ def build_process_map(
     max_edges begrenzt zusätzlich die Anzahl der Kanten auf die häufigsten. Bei dichten
     Logs ist das die wirksamere Bremse: Ein Anteil von 60 % können immer noch Hunderte
     Kanten sein, eine feste Obergrenze bleibt dagegen in jedem Fall lesbar.
+
+    focus_nodes und focus_edges werden immer gezeigt, auch wenn sie selten sind. So kann
+    die Oberfläche die Stelle eines Insights hervorheben, egal wie der Regler steht.
     """
     detail = min(max(detail, 0.0), 1.0)
     edges = _all_edges(log)
@@ -49,6 +56,7 @@ def build_process_map(
     if max_edges is not None:
         # _all_edges sortiert absteigend nach Häufigkeit, _filter_edges behält die Reihenfolge.
         kept = kept.head(max_edges).reset_index(drop=True)
+    kept = _add_focus(edges, kept, focus_nodes or set(), focus_edges or set())
 
     activity_counts = log[ACTIVITY].value_counts()
     ids = set(kept["source"]) | set(kept["target"])
@@ -106,3 +114,25 @@ def _filter_edges(edges: pd.DataFrame, detail: float) -> pd.DataFrame:
             if len(idx):
                 keep.loc[idx[0]] = True
     return edges[keep].reset_index(drop=True)
+
+
+def _add_focus(
+    edges: pd.DataFrame,
+    kept: pd.DataFrame,
+    focus_nodes: set[str],
+    focus_edges: set[tuple[str, str]],
+) -> pd.DataFrame:
+    """Nimmt die Kanten dazu, die für eine Hervorhebung nötig sind."""
+    if not focus_nodes and not focus_edges:
+        return kept
+    pairs = list(zip(edges["source"], edges["target"], strict=True))
+    wanted = [pair in focus_edges for pair in pairs]
+    for node in focus_nodes:
+        # Stärkste ein- und ausgehende Kante, damit der Knoten sichtbar angebunden ist.
+        for col in ("source", "target"):
+            idx = edges.index[edges[col] == node]
+            if len(idx):
+                wanted[idx[0]] = True
+    extra = edges[wanted]
+    merged = pd.concat([kept, extra]).drop_duplicates(subset=["source", "target"])
+    return merged.sort_values("count", ascending=False, kind="stable").reset_index(drop=True)

@@ -133,6 +133,52 @@
            background: var(--card); color: var(--text); border: 1px solid var(--line);
            border-radius: 6px; }
 
+  /* Hervorhebung einer Insight-Stelle in der Prozesslandkarte */
+  .node.hl rect { stroke: var(--high); stroke-width: 2.6; }
+  .edge.hl path { stroke: var(--high); stroke-dasharray: none; }
+  .edge.hl text { fill: var(--high); font-weight: 600; }
+  svg.focused .node:not(.hl):not(.terminal), svg.focused .edge:not(.hl) { opacity: .3; }
+  .focusinfo { display: inline-flex; align-items: center; gap: 8px; font-size: 13px;
+               border: 1px solid var(--high); color: var(--high); border-radius: 999px;
+               padding: 3px 4px 3px 12px; }
+  .focusinfo button { padding: 2px 10px; font-size: 12px; border-radius: 999px; }
+
+  .insight .head { display: flex; justify-content: space-between; gap: 12px; align-items: start; }
+  .insight .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .insight .actions button { padding: 6px 12px; font-size: 13px; }
+  .insight .panel { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
+  .insight h4 { font-size: 14px; margin: 14px 0 4px; }
+  table.metrics { max-width: 560px; }
+  table.metrics td:last-child { font-variant-numeric: tabular-nums; text-align: right; }
+  .cases { overflow-x: auto; }
+  table.cases-table th { text-align: left; font-size: 12px; color: var(--muted);
+                         font-weight: 600; padding: 4px 12px 4px 0;
+                         border-bottom: 1px solid var(--line); }
+  table.cases-table td { vertical-align: top; font-size: 13px; }
+  table.cases-table td { white-space: nowrap; }
+  table.cases-table td:first-child { color: var(--text); }
+  table.cases-table td:last-child { white-space: normal; min-width: 320px; }
+  .trace { color: var(--muted); }
+  .trace b { color: var(--high); font-weight: 600; }
+  .pager { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-size: 13px;
+           color: var(--muted); }
+  .pager button { padding: 4px 12px; font-size: 13px; }
+
+  .settings { border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px;
+              margin-bottom: 14px; max-width: 760px; }
+  .settings summary { font-weight: 600; }
+  .settings .field { margin: 14px 0; }
+  .settings .field > span { display: block; font-size: 14px; font-weight: 600; }
+  .settings .field small { display: block; color: var(--muted); font-size: 13px; margin: 2px 0 6px; }
+  .settings input[type=number] { font: inherit; width: 110px; padding: 6px; background: var(--card);
+                                 color: var(--text); border: 1px solid var(--line); border-radius: 6px; }
+  .pair { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; flex-wrap: wrap; }
+  .pair select { width: auto; min-width: 180px; margin: 0; }
+  .pair button { padding: 4px 10px; }
+  .fielderror { color: var(--high); font-size: 13px; margin-top: 4px; }
+  .runs { margin-top: 14px; font-size: 13px; color: var(--muted); }
+  .runs li { margin: 2px 0; }
+
   .msg { padding: 10px 14px; border-radius: 8px; border: 1px solid var(--line);
          background: var(--card); margin-bottom: 16px; font-size: 14px; }
   .msg.error { border-color: var(--high); color: var(--high); }
@@ -212,6 +258,10 @@
         <label for="paths">Angezeigte Pfade</label>
         <input type="range" id="paths" min="10" max="150" step="5" value="40">
         <span class="tag" id="mapInfo"></span>
+        <span class="focusinfo" id="focusInfo" hidden>
+          <span id="focusLabel"></span>
+          <button type="button" id="focusClear">Hervorhebung aufheben</button>
+        </span>
       </div>
       <div class="mapbox" id="mapBox"><svg id="graph"></svg></div>
       <div class="modelbox" id="modelBox" hidden></div>
@@ -242,8 +292,38 @@
     <h2><span class="num">3</span> Probleme finden</h2>
     <p class="hint">Die Analyse prüft das Log auf Nacharbeit, Engpässe, lange Laufzeiten und Ausreißer.</p>
     <div class="body">
+      <details class="settings" id="settings">
+        <summary>Einstellungen</summary>
+        <div class="field">
+          <span>Frist für die Durchlaufzeit (Tage)</span>
+          <small>Fälle, die länger dauern, werden gemeldet. Leer lassen: Das Tool sucht
+            selbst die auffällig langsamsten 10 % der Fälle.</small>
+          <input type="number" id="setSlaDays" min="0.1" step="0.5" placeholder="automatisch">
+          <div class="fielderror" id="errSlaDays" hidden></div>
+        </div>
+        <div class="field">
+          <span>Anzahl gemeldeter Engpässe</span>
+          <small>Die Übergänge mit der meisten Wartezeit.</small>
+          <input type="number" id="setTopN" min="1" max="20" step="1" value="3">
+          <div class="fielderror" id="errTopN" hidden></div>
+        </div>
+        <div class="field">
+          <span>Seltene Varianten: Schwelle in %</span>
+          <small>Varianten, die seltener vorkommen, gelten als Abweichung vom Standardablauf.</small>
+          <input type="number" id="setRare" min="0.1" max="50" step="0.1" value="1">
+          <div class="fielderror" id="errRare" hidden></div>
+        </div>
+        <div class="field">
+          <span>Vier-Augen-Prinzip</span>
+          <small id="sodHint">Welche zwei Schritte darf nicht dieselbe Person im selben Fall
+            erledigen? Zum Beispiel „Bestellung anlegen“ und „Bestellung freigeben“.</small>
+          <div id="sodPairs"></div>
+          <button type="button" id="sodAdd">+ Paar hinzufügen</button>
+        </div>
+      </details>
       <button class="primary" id="analyzeBtn">Analyse starten</button>
       <div id="insights"></div>
+      <ul class="runs" id="runs" hidden></ul>
     </div>
   </section>
 
@@ -255,6 +335,9 @@
 <script>
 const $ = (id) => document.getElementById(id);
 let logId = null;
+let summary = null;     // Kennzahlen des aktuellen Logs (Aktivitäten, Ressourcen)
+let analysisId = null;
+let focus = null;       // { nodes: [...], edges: [[von, nach]], label } oder null
 
 function show(el, on = true) { el.hidden = !on; }
 
@@ -283,10 +366,11 @@ function compact(n) {
 }
 
 function formatDuration(seconds) {
+  const one = (x) => x.toLocaleString("de", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
   const days = seconds / 86400;
-  if (days >= 1) return days.toFixed(1) + " Tage";
+  if (days >= 1) return one(days) + " Tage";
   const hours = seconds / 3600;
-  if (hours >= 1) return hours.toFixed(1) + " Std.";
+  if (hours >= 1) return one(hours) + " Std.";
   return Math.round(seconds / 60) + " Min.";
 }
 
@@ -363,6 +447,9 @@ async function showOverview(log) {
   try {
     $("logName").textContent = log.name;
     const s = await api("/logs/" + logId + "/summary");
+    summary = s;
+    focus = null;
+    analysisId = null;
     const tiles = [
       [s.n_cases.toLocaleString("de"), "Fälle"],
       [s.n_events.toLocaleString("de"), "Ereignisse"],
@@ -384,6 +471,8 @@ async function showOverview(log) {
     showActivities(s);
     $("paths").value = "40";    // für ein neues Log wieder mit einer lesbaren Karte starten
     $("insights").replaceChildren();
+    show($("runs"), false);
+    resetSettings();
     show($("step2"));
     show($("step3"));
     setView("map");
@@ -460,14 +549,22 @@ async function loadProcessMap() {
   try {
     // Der Regler begrenzt die Anzahl der Pfade. Gezeigt werden immer die häufigsten -
     // das hält die Karte auch bei einem Log mit Hunderten Übergängen lesbar.
-    const map = await api("/logs/" + logId + "/process-map?max_edges=" + $("paths").value);
+    const params = new URLSearchParams({ max_edges: $("paths").value });
+    // Hervorgehobene Stellen immer mitschicken, sonst könnte der Regler sie ausblenden.
+    for (const n of focus?.nodes || []) params.append("focus_node", n);
+    for (const [a, b] of focus?.edges || []) params.append("focus_edge", a + "→" + b);
+    const map = await api("/logs/" + logId + "/process-map?" + params);
     const hidden = map.total_edges - map.edges.length;
     $("mapInfo").textContent = hidden
       ? map.edges.length + " der " + map.total_edges + " Übergänge (die häufigsten)"
       : "alle " + map.total_edges + " Übergänge";
     drawProcessMap(map);
+    show($("focusInfo"), !!focus);
+    if (focus) $("focusLabel").textContent = "Hervorgehoben: " + focus.label;
   } catch (err) { msg(err.message, true); }
 }
+
+$("focusClear").onclick = () => { focus = null; loadProcessMap(); };
 
 // --- Prozessmodell zeichnen ----------------------------------------------
 // Eigenes kleines Layout, damit die Seite ohne zusaetzliche Bibliothek auskommt:
@@ -556,7 +653,10 @@ function orderWithinLayers(rows, edges) {
 function drawProcessMap(map) {
   const svg = $("graph");
   svg.replaceChildren();
+  svg.classList.toggle("focused", !!focus);
   if (!map.nodes.length) return;
+  const hlNodes = new Set(focus?.nodes || []);
+  const hlEdges = new Set((focus?.edges || []).map(([a, b]) => a + "\u0000" + b));
 
   const ids = map.nodes.map((n) => n.id);
   const known = new Set(ids);
@@ -610,7 +710,8 @@ function drawProcessMap(map) {
   fitDiagram(svg, total);
 
   const defs = el("defs");
-  for (const [id, color] of [["arrow", "var(--edge)"], ["arrowLoop", "var(--loop)"]]) {
+  for (const [id, color] of [["arrow", "var(--edge)"], ["arrowLoop", "var(--loop)"],
+                             ["arrowHl", "var(--high)"]]) {
     const marker = el("marker", { id, viewBox: "0 0 8 8", refX: 7, refY: 4,
       markerWidth: 7, markerHeight: 7, orient: "auto-start-reverse" });
     marker.append(el("path", { d: "M0,0 L8,4 L0,8 z", fill: color }));
@@ -624,7 +725,8 @@ function drawProcessMap(map) {
   for (const e of edges) {
     const a = box.get(e.source), b = box.get(e.target);
     const isLoop = back.has(e.source + "\u0000" + e.target);
-    const g = el("g", { class: "edge" + (isLoop ? " loop" : "") });
+    const isHl = hlEdges.has(e.source + "\u0000" + e.target);
+    const g = el("g", { class: "edge" + (isLoop ? " loop" : "") + (isHl ? " hl" : "") });
     let d, labelX, labelY;
     if (isLoop) {
       // Rückwärts: unter dem Graphen entlang, vom unteren Rand zum unteren Rand
@@ -640,7 +742,8 @@ function drawProcessMap(map) {
       d = "M" + x1 + "," + y1 + " C" + mid + "," + y1 + " " + mid + "," + y2 + " " + x2 + "," + y2;
       labelX = mid; labelY = (y1 + y2) / 2 - 5;
     }
-    const path = el("path", { d, "marker-end": isLoop ? "url(#arrowLoop)" : "url(#arrow)",
+    const marker = isHl ? "url(#arrowHl)" : isLoop ? "url(#arrowLoop)" : "url(#arrow)";
+    const path = el("path", { d, "marker-end": marker,
       "stroke-width": (1 + 3 * (e.count / maxCount)).toFixed(1) });
     const title = el("title");
     title.textContent = e.source + " → " + e.target + ": " + e.count + " mal"
@@ -650,7 +753,7 @@ function drawProcessMap(map) {
     g.append(path);
     // Bei vielen Pfeilen würden die Zahlen einander überlagern. Dann trägt allein
     // die Strichstärke die Häufigkeit, die genaue Zahl steht im Tooltip.
-    if (showEdgeLabels) {
+    if (showEdgeLabels || isHl) {
       const label = el("text", { x: labelX, y: labelY, "text-anchor": "middle" });
       label.textContent = compact(e.count);
       g.append(label);
@@ -663,7 +766,8 @@ function drawProcessMap(map) {
     const b = box.get(n.id);
     if (!b) continue;
     const terminal = n.kind !== "activity";
-    const g = el("g", { class: "node" + (terminal ? " terminal" : "") });
+    const g = el("g", { class: "node" + (terminal ? " terminal" : "")
+      + (hlNodes.has(n.id) ? " hl" : "") });
     g.append(el("rect", { x: b.x, y: b.y, width: b.w, height: NODE_H,
       rx: terminal ? NODE_H / 2 : 7 }));
     const text = el("text", { x: b.x + b.w / 2, y: b.y + (terminal ? 22 : 18),
@@ -684,15 +788,98 @@ function drawProcessMap(map) {
   }
 }
 
+// --- Schritt 3: Einstellungen ------------------------------------------------
+function resetSettings() {
+  $("setSlaDays").value = "";
+  $("setTopN").value = "3";
+  $("setRare").value = "1";
+  $("sodPairs").replaceChildren();
+  for (const id of ["errSlaDays", "errTopN", "errRare"]) show($(id), false);
+  const hasResource = !!summary?.has_resource;
+  $("sodAdd").disabled = !hasResource;
+  $("sodHint").textContent = hasResource
+    ? "Welche zwei Schritte darf nicht dieselbe Person im selben Fall erledigen? "
+      + "Zum Beispiel „Bestellung anlegen“ und „Bestellung freigeben“."
+    : "Dieses Log enthält keine Angaben, wer einen Schritt erledigt hat (Ressource). "
+      + "Deshalb kann das Vier-Augen-Prinzip hier nicht geprüft werden.";
+}
+
+function activityOptions(select) {
+  const names = Object.keys(summary?.activity_counts || {}).sort((a, b) => a.localeCompare(b, "de"));
+  for (const name of names) select.add(new Option(name, name));
+}
+
+$("sodAdd").onclick = () => {
+  const row = document.createElement("div");
+  row.className = "pair";
+  const first = document.createElement("select");
+  const second = document.createElement("select");
+  activityOptions(first);
+  activityOptions(second);
+  if (second.options.length > 1) second.selectedIndex = 1;
+  const and = document.createElement("span");
+  and.textContent = "und";
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.textContent = "×";
+  remove.title = "Paar entfernen";
+  remove.onclick = () => row.remove();
+  row.append(first, and, second, remove);
+  $("sodPairs").append(row);
+};
+
+// Liest die Einstellungen aus. Bei ungültigen Werten wird der Fehler direkt am
+// Feld angezeigt und null zurückgegeben.
+function readConfig() {
+  let ok = true;
+  const check = (inputId, errorId, test, text) => {
+    const valid = test($(inputId).value);
+    $(errorId).textContent = text;
+    show($(errorId), !valid);
+    ok = ok && valid;
+  };
+  check("setSlaDays", "errSlaDays", (v) => v === "" || Number(v) > 0,
+        "Bitte eine Zahl größer als 0 eingeben oder das Feld leer lassen.");
+  check("setTopN", "errTopN", (v) => Number.isInteger(Number(v)) && v >= 1 && v <= 20,
+        "Bitte eine ganze Zahl zwischen 1 und 20 eingeben.");
+  check("setRare", "errRare", (v) => v !== "" && Number(v) > 0 && Number(v) < 50,
+        "Bitte eine Zahl zwischen 0 und 50 eingeben.");
+  if (!ok) { $("settings").open = true; return null; }
+
+  const config = {
+    bottleneck: { top_n: Number($("setTopN").value) },
+    rare_variants: { max_variant_share: Number($("setRare").value) / 100 },
+  };
+  if ($("setSlaDays").value !== "") config.sla = { max_days: Number($("setSlaDays").value) };
+  const pairs = [...$("sodPairs").children].map((row) => {
+    const [first, second] = row.querySelectorAll("select");
+    return { first: first.value, second: second.value };
+  }).filter((pair) => pair.first !== pair.second);
+  if (pairs.length) config.segregation_of_duties = { pairs };
+  return config;
+}
+
 // --- Schritt 3: Analyse --------------------------------------------------
+let detectorNames = null;
+
+async function loadDetectorNames() {
+  if (detectorNames) return detectorNames;
+  const list = await api("/detectors");
+  detectorNames = Object.fromEntries(list.map((d) => [d.id, d.name]));
+  return detectorNames;
+}
+
 $("analyzeBtn").onclick = async () => {
+  const config = readConfig();
+  if (!config) return;
   $("analyzeBtn").disabled = true;
+  show($("runs"), false);
   $("insights").textContent = "Analyse läuft …";
   try {
     let analysis = await api("/logs/" + logId + "/analyses", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ config: {} }),
+      body: JSON.stringify({ config }),
     });
     while (analysis.status === "pending" || analysis.status === "running") {
       await new Promise((r) => setTimeout(r, 1000));
@@ -701,7 +888,9 @@ $("analyzeBtn").onclick = async () => {
     if (analysis.status === "failed") {
       throw new Error(analysis.error_message || "Die Analyse ist fehlgeschlagen.");
     }
+    analysisId = analysis.id;
     showInsights(analysis.result.insights);
+    showRuns(analysis.result.detector_runs, await loadDetectorNames());
   } catch (err) {
     $("insights").replaceChildren();
     msg(err.message, true);
@@ -710,46 +899,206 @@ $("analyzeBtn").onclick = async () => {
   }
 };
 
+// Welche Prüfungen gelaufen sind, und warum eine eventuell nicht lief.
+function showRuns(runs, names) {
+  $("runs").replaceChildren(...runs.map((r) => {
+    const li = document.createElement("li");
+    const name = names[r.detector_id] || r.detector_id;
+    if (r.status === "ok") {
+      li.textContent = "✓ " + name + ": " + (r.insight_count
+        ? r.insight_count + (r.insight_count === 1 ? " Fund" : " Funde")
+        : "nichts Auffälliges");
+    } else if (r.status === "not_applicable") {
+      li.textContent = "– " + name + ": nicht geprüft. " + (r.message || "");
+    } else {
+      li.textContent = "⚠ " + name + ": Fehler. " + (r.message || "");
+    }
+    return li;
+  }));
+  show($("runs"));
+}
+
 const SEVERITY = { high: "hoch", medium: "mittel", low: "niedrig" };
+
+const count = (n) => Number(n).toLocaleString("de");
+const percent = (x) => (x * 100).toLocaleString("de", { maximumFractionDigits: 1 }) + " %";
+const duration = (s) => formatDuration(Number(s));
+
+// Lesbare Namen und Einheiten für die Kennzahlen der Detektoren.
+const METRICS = {
+  affected_cases: ["Betroffene Fälle", count],
+  extra_executions: ["Zusätzliche Ausführungen", count],
+  max_executions_per_case: ["Höchstens in einem Fall", (n) => count(n) + "-mal"],
+  median_wait_seconds: ["Wartezeit (Median)", duration],
+  total_wait_share: ["Anteil an der gesamten Wartezeit", percent],
+  transition_count: ["Anzahl dieser Übergänge", count],
+  threshold_seconds: ["Schwelle", duration],
+  median_seconds: ["Durchlaufzeit aller Fälle (Median)", duration],
+  max_seconds: ["Längster Fall", duration],
+  involved_resources: ["Beteiligte Personen", count],
+  rare_variant_count: ["Seltene Varianten", count],
+  total_variant_count: ["Varianten insgesamt", count],
+};
+
+// Welche Stelle der Prozesslandkarte gehört zu einem Insight?
+function focusFor(insight) {
+  const ev = insight.evidence || {};
+  if (insight.detector_id === "bottleneck") {
+    return { nodes: [ev.source, ev.target], edges: [[ev.source, ev.target]],
+             label: ev.source + " → " + ev.target };
+  }
+  if (insight.detector_id === "rework") {
+    return { nodes: [ev.activity], edges: [], label: ev.activity };
+  }
+  if (insight.detector_id === "segregation_of_duties") {
+    return { nodes: [ev.first, ev.second], edges: [], label: ev.first + " / " + ev.second };
+  }
+  return null;
+}
 
 function showInsights(insights) {
   if (!insights.length) {
     $("insights").textContent = "Keine Auffälligkeiten gefunden.";
     return;
   }
-  $("insights").replaceChildren(...insights.map((i) => {
-    const boxEl = document.createElement("div");
-    boxEl.className = "insight " + i.severity;
+  $("insights").replaceChildren(...insights.map(insightCard));
+}
 
-    const title = document.createElement("h3");
-    title.textContent = i.title;
+function insightCard(i) {
+  const card = document.createElement("div");
+  card.className = "insight " + i.severity;
 
-    const text = document.createElement("p");
-    text.textContent = i.summary;
+  const title = document.createElement("h3");
+  title.textContent = i.title;
+  const text = document.createElement("p");
+  text.textContent = i.summary;
+  const meta = document.createElement("p");
+  meta.className = "tag";
+  meta.textContent = "Schweregrad: " + SEVERITY[i.severity] + " · "
+    + count(i.affected_case_count) + (i.affected_case_count === 1 ? " Fall" : " Fälle")
+    + " betroffen (" + percent(i.affected_case_share) + ")";
 
-    const meta = document.createElement("p");
-    meta.className = "tag";
-    meta.textContent = "Schweregrad: " + SEVERITY[i.severity] + " · "
-      + i.affected_case_count.toLocaleString("de") + " Fälle betroffen ("
-      + (i.affected_case_share * 100).toFixed(1) + " %)";
+  const actions = document.createElement("div");
+  actions.className = "actions";
+  const detailsBtn = document.createElement("button");
+  detailsBtn.type = "button";
+  detailsBtn.textContent = "Details und Fälle";
+  actions.append(detailsBtn);
 
-    const details = document.createElement("details");
-    const summary = document.createElement("summary");
-    summary.textContent = "Details";
+  const target = focusFor(i);
+  if (target) {
+    const mapBtn = document.createElement("button");
+    mapBtn.type = "button";
+    mapBtn.textContent = "Im Prozessmodell zeigen";
+    mapBtn.onclick = () => {
+      focus = target;
+      setView("map");
+      $("mapBox").scrollIntoView({ behavior: "smooth", block: "center" });
+    };
+    actions.append(mapBtn);
+  }
+
+  const panel = document.createElement("div");
+  panel.className = "panel";
+  panel.hidden = true;
+  let built = false;
+  detailsBtn.onclick = () => {
+    if (!built) { buildPanel(panel, i, target); built = true; }
+    panel.hidden = !panel.hidden;
+    detailsBtn.textContent = panel.hidden ? "Details und Fälle" : "Details ausblenden";
+  };
+
+  card.append(title, text, meta, actions, panel);
+  return card;
+}
+
+function buildPanel(panel, i, target) {
+  const h1 = document.createElement("h4");
+  h1.textContent = "Kennzahlen";
+  const table = document.createElement("table");
+  table.className = "metrics";
+  for (const [key, value] of Object.entries(i.metrics)) {
+    const [label, format] = METRICS[key] || [key, (v) => v];
+    const tr = table.insertRow();
+    tr.insertCell().textContent = label;
+    tr.insertCell().textContent = format(value);
+  }
+  const rule = document.createElement("p");
+  rule.className = "tag";
+  rule.textContent = "Wie der Schweregrad entsteht: " + i.severity_rule;
+
+  const h2 = document.createElement("h4");
+  h2.textContent = "Betroffene Fälle";
+  const cases = document.createElement("div");
+  cases.className = "cases";
+  panel.append(h1, table, rule, h2, cases);
+  loadCases(cases, i, new Set(target?.nodes || []), 0);
+}
+
+const PAGE = 10;
+const MAX_TRACE = 14;  // längere Abläufe werden gekürzt
+
+async function loadCases(box, insight, marked, offset) {
+  box.textContent = "Fälle werden geladen …";
+  try {
+    const page = await api("/analyses/" + analysisId + "/insights/" + insight.id
+      + "/cases?limit=" + PAGE + "&offset=" + offset);
     const table = document.createElement("table");
-    for (const [name, value] of Object.entries(i.metrics)) {
-      const tr = table.insertRow();
-      tr.insertCell().textContent = name;
-      tr.insertCell().textContent = value;
+    table.className = "cases-table";
+    const head = table.createTHead().insertRow();
+    for (const h of ["Fall", "Beginn", "Dauer", "Ablauf"]) {
+      const th = document.createElement("th");
+      th.textContent = h;
+      head.append(th);
     }
-    const rule = document.createElement("p");
-    rule.className = "tag";
-    rule.textContent = "Regel: " + i.severity_rule;
-    details.append(summary, table, rule);
+    const body = table.createTBody();
+    for (const c of page.cases) {
+      const tr = body.insertRow();
+      tr.insertCell().textContent = c.case_id;
+      tr.insertCell().textContent = new Date(c.start).toLocaleDateString("de");
+      tr.insertCell().textContent = formatDuration(c.duration_seconds);
+      tr.insertCell().append(traceElement(c.trace, marked));
+    }
 
-    boxEl.append(title, text, meta, details);
-    return boxEl;
-  }));
+    const pager = document.createElement("div");
+    pager.className = "pager";
+    const info = document.createElement("span");
+    const last = Math.min(offset + page.cases.length, page.total);
+    info.textContent = count(offset + 1) + "–" + count(last) + " von " + count(page.total);
+    const prev = document.createElement("button");
+    prev.type = "button";
+    prev.textContent = "Zurück";
+    prev.disabled = offset === 0;
+    prev.onclick = () => loadCases(box, insight, marked, Math.max(0, offset - PAGE));
+    const next = document.createElement("button");
+    next.type = "button";
+    next.textContent = "Weiter";
+    next.disabled = last >= page.total;
+    next.onclick = () => loadCases(box, insight, marked, offset + PAGE);
+    pager.append(prev, info, next);
+    box.replaceChildren(table, pager);
+  } catch (err) {
+    box.textContent = "Die Fälle konnten nicht geladen werden: " + err.message;
+  }
+}
+
+// Ablauf eines Falls als Text; die Aktivitäten des Insights werden hervorgehoben.
+function traceElement(trace, marked) {
+  const span = document.createElement("span");
+  span.className = "trace";
+  const shown = trace.slice(0, MAX_TRACE);
+  shown.forEach((activity, index) => {
+    if (index) span.append(" → ");
+    if (marked.has(activity)) {
+      const b = document.createElement("b");
+      b.textContent = activity;
+      span.append(b);
+    } else {
+      span.append(activity);
+    }
+  });
+  if (trace.length > MAX_TRACE) span.append(" … (+" + (trace.length - MAX_TRACE) + " weitere)");
+  return span;
 }
 </script>
 </body>

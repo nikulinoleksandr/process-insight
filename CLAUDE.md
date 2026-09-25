@@ -5,7 +5,7 @@ Details: siehe docs/VISION.md und docs/ARCHITEKTUR.md
 ## Technik
 - Windows, PowerShell, Python 3.14 in .venv
 - Backend: Python, FastAPI, PM4Py, pytest
-- Frontend: React mit TypeScript (kommt später)
+- Frontend: eine HTML-Datei mit JavaScript ohne Framework (`backend/app/static/index.html`), vom Backend ausgeliefert
 
 ## Arbeitsweise
 - Ich bin Student und will lernen. Erkläre jede Änderung kurz auf Deutsch in einfachen Worten.

@@ -9,9 +9,11 @@ from app.core.process.models import ModelKind, render_model
 from app.core.process.process_map import ProcessMap, build_process_map
 from app.core.process.stats import LogSummary, summarize
 from app.core.process.variants import Variant, top_variants
+from app.services.errors import BadInputError
 from app.services.log_service import LogService
 
 router = APIRouter(prefix="/logs", tags=["Logs"])
+FOCUS_SEPARATOR = "→"
 Logs = Annotated[LogService, Depends(get_log_service)]
 
 
@@ -59,8 +61,27 @@ def get_process_map(
     max_edges: Annotated[
         int | None, Query(ge=5, le=500, description="Nur die häufigsten N Übergänge")
     ] = None,
+    focus_node: Annotated[
+        list[str] | None, Query(description="Aktivität, die immer gezeigt wird")
+    ] = None,
+    focus_edge: Annotated[
+        list[str] | None,
+        Query(description=f"Übergang, der immer gezeigt wird, als 'A{FOCUS_SEPARATOR}B'"),
+    ] = None,
 ) -> ProcessMap:
-    return build_process_map(logs.events(log_id), detail, max_edges)
+    edges = set()
+    for value in focus_edge or []:
+        source, sep, target = value.partition(FOCUS_SEPARATOR)
+        if not sep:
+            raise BadInputError(f"focus_edge braucht die Form 'A{FOCUS_SEPARATOR}B'.")
+        edges.add((source, target))
+    return build_process_map(
+        logs.events(log_id),
+        detail,
+        max_edges,
+        focus_nodes=set(focus_node or []),
+        focus_edges=edges,
+    )
 
 
 @router.get(

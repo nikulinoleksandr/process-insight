@@ -12,7 +12,7 @@ from app.api.schemas import (
     CasePage,
     InsightOut,
 )
-from app.core.columns import CASE, TIMESTAMP
+from app.core.columns import ACTIVITY, CASE, TIMESTAMP
 from app.services.analysis_service import AnalysisService
 from app.services.errors import ConflictError, NotFoundError
 from app.services.log_service import LogService
@@ -87,6 +87,8 @@ def get_insight_cases(
     events = logs.events(analyses.get(analysis_id)["log_id"])
     subset = events[events[CASE].isin(page_ids)]
     grouped = subset.groupby(CASE)[TIMESTAMP].agg(["min", "max", "size"])
+    # Das Log ist nach Fall und Zeit sortiert, die Reihenfolge stimmt also schon.
+    traces = subset.groupby(CASE)[ACTIVITY].agg(list)
     cases = [
         CaseOut(
             case_id=cid,
@@ -94,6 +96,7 @@ def get_insight_cases(
             start=grouped.at[cid, "min"].isoformat(),
             end=grouped.at[cid, "max"].isoformat(),
             duration_seconds=(grouped.at[cid, "max"] - grouped.at[cid, "min"]).total_seconds(),
+            trace=[str(a) for a in traces[cid]],
         )
         for cid in page_ids
         if cid in grouped.index

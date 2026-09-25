@@ -99,3 +99,19 @@ def test_process_map_max_edges_keeps_the_most_frequent():
     assert limited.edges[0].count == strongest
     # Knoten richten sich nach den übrigen Kanten
     assert set(n.id for n in limited.nodes) >= {START, END}
+
+
+def test_process_map_focus_keeps_rare_edge_and_node():
+    rows = []
+    for i in range(20):
+        rows += [(str(i), "A", 0), (str(i), "B", 1)]
+    rows += [("x", "A", 0), ("x", "C", 1), ("x", "D", 2)]
+    log = make_log(rows)
+    limited = build_process_map(log, max_edges=3)
+    assert ("C", "D") not in edge_counts(limited)
+
+    focused = build_process_map(log, max_edges=3, focus_edges={("C", "D")}, focus_nodes={"C"})
+    counts = edge_counts(focused)
+    assert counts[("C", "D")] == 1
+    assert ("A", "C") in counts  # stärkste eingehende Kante von C
+    assert {"C", "D"} <= {n.id for n in focused.nodes}

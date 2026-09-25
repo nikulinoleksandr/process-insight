@@ -12,9 +12,12 @@ Process Insight liest Event-Logs von Geschäftsprozessen (XES oder CSV) ein, zei
 - Tabelle aller Aktivitäten mit Häufigkeit und Anzahl betroffener Fälle
 - Drei Ansichten des Prozesses: interaktive Prozesslandkarte (Directly-Follows-Graph mit
   Häufigkeiten, Wartezeiten und Detailgrad-Regler), BPMN und Petri-Netz
-- Insight-Engine mit fünf Detektoren, jeder einzeln konfigurierbar
+- Insight-Engine mit fünf Detektoren; Frist, Anzahl der Engpässe, Schwelle für seltene
+  Varianten und Aktivitätspaare fürs Vier-Augen-Prinzip lassen sich in der Oberfläche einstellen
+- Jedes Insight ist nachvollziehbar: lesbare Kennzahlen, Liste der betroffenen Fälle mit
+  ihrem Ablauf und Hervorhebung der Stelle in der Prozesslandkarte
 - Analysen laufen im Hintergrund, Ergebnisse werden gespeichert und wiederverwendet
-- REST-API mit automatischer Dokumentation, 42 automatische Tests, CI mit GitHub Actions
+- REST-API mit automatischer Dokumentation, 48 automatische Tests, CI mit GitHub Actions
 
 ## Server starten (Windows, PowerShell)
 
@@ -87,4 +90,4 @@ Details und Begründungen: [docs/ARCHITEKTUR.md](docs/ARCHITEKTUR.md)
 
 ## Lizenz
 
-Dieses Projekt nutzt [PM4Py](https://github.com/process-intelligence-solutions/pm4py) (AGPL-3.0) und steht deshalb ebenfalls unter der AGPL-3.0.
+Dieses Projekt nutzt [PM4Py](https://github.com/process-intelligence-solutions/pm4py) (AGPL-3.0) und steht deshalb ebenfalls unter der AGPL-3.0, siehe [LICENSE](LICENSE).

@@ -150,3 +150,25 @@ def test_startseite_liefert_oberflaeche(client):
     assert response.headers["content-type"].startswith("text/html")
     assert "Process Insight" in response.text
     assert client.get("/api/health").status_code == 200
+
+
+def test_process_map_focus_parameters(client):
+    log_id = client.get("/api/demo").json()["id"]
+    url = f"/api/logs/{log_id}/process-map"
+    params = {"max_edges": 5, "focus_edge": "decide→reinitiate request"}
+    pm = client.get(url, params=params).json()
+    assert any(e["source"] == "decide" and e["target"] == "reinitiate request" for e in pm["edges"])
+    assert client.get(url, params={"focus_edge": "ohne Trennzeichen"}).status_code == 422
+
+
+def test_cases_contain_trace(client):
+    log_id = client.get("/api/demo").json()["id"]
+    started = client.post(f"/api/logs/{log_id}/analyses").json()
+    analysis = client.get(f"/api/analyses/{started['id']}").json()
+    insight = next(
+        i for i in analysis["result"]["insights"] if i["evidence"].get("activity") == "check ticket"
+    )
+    page = client.get(f"/api/analyses/{analysis['id']}/insights/{insight['id']}/cases").json()
+    first = page["cases"][0]
+    assert first["trace"][0] == "register request"
+    assert first["trace"].count("check ticket") >= 2
