@@ -56,8 +56,11 @@ def get_process_map(
     log_id: str,
     logs: Logs,
     detail: Annotated[float, Query(ge=0, le=1, description="1 = alle Pfade")] = 1.0,
+    max_edges: Annotated[
+        int | None, Query(ge=5, le=500, description="Nur die häufigsten N Übergänge")
+    ] = None,
 ) -> ProcessMap:
-    return build_process_map(logs.events(log_id), detail)
+    return build_process_map(logs.events(log_id), detail, max_edges)
 
 
 @router.get(

@@ -209,8 +209,8 @@
         </div>
       </div>
       <div class="mapbar" id="detailBar">
-        <label for="detail">Detailgrad</label>
-        <input type="range" id="detail" min="0.2" max="1" step="0.1" value="1">
+        <label for="paths">Angezeigte Pfade</label>
+        <input type="range" id="paths" min="10" max="150" step="5" value="40">
         <span class="tag" id="mapInfo"></span>
       </div>
       <div class="mapbox" id="mapBox"><svg id="graph"></svg></div>
@@ -219,7 +219,10 @@
         Jeder Kasten ist eine Aktivität, die Zahl darunter sagt, wie oft sie vorkommt.
         Pfeile zeigen, welche Aktivität direkt auf welche folgt; dicker heißt häufiger.
         <span style="color:var(--loop)">Orange gestrichelte Pfeile</span> laufen zurück &ndash;
-        dort wird etwas wiederholt.
+        dort wird etwas wiederholt. Bei großen Logs werden Zahlen gekürzt („1,2 Mio“)
+        und bei mehr als 24 Pfeilen ganz weggelassen &ndash; dann zeigt allein die
+        Strichstärke die Häufigkeit, die genauen Werte stehen beim Überfahren mit
+        der Maus.
       </p>
       <p class="legend" id="legendBpmn" hidden>
         BPMN in der Standardnotation, entdeckt mit dem Inductive Miner. Rauten sind
@@ -268,6 +271,15 @@ async function api(path, options) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.detail || "Fehler " + res.status);
   return data;
+}
+
+// Kurzform für Zahlen im Diagramm. "1.234.567" braucht dort zu viel Platz und
+// macht die Landkarte unruhig; die genaue Zahl steht im Tooltip.
+function compact(n) {
+  // 999.500 gehört schon zu "1 Mio", sonst käme dort "1.000 Tsd" heraus.
+  if (n >= 999500) return (n / 1e6).toLocaleString("de", { maximumFractionDigits: 1 }) + " Mio";
+  if (n >= 1e4) return Math.round(n / 1e3).toLocaleString("de") + " Tsd";
+  return n.toLocaleString("de");
 }
 
 function formatDuration(seconds) {
@@ -370,6 +382,7 @@ async function showOverview(log) {
       return tile;
     }));
     showActivities(s);
+    $("paths").value = "40";    // für ein neues Log wieder mit einer lesbaren Karte starten
     $("insights").replaceChildren();
     show($("step2"));
     show($("step3"));
@@ -441,14 +454,17 @@ async function loadModel(kind) {
   }
 }
 
-$("detail").oninput = () => { if (logId) loadProcessMap(); };
+$("paths").oninput = () => { if (logId) loadProcessMap(); };
 
 async function loadProcessMap() {
-  const detail = $("detail").value;
   try {
-    const map = await api("/logs/" + logId + "/process-map?detail=" + detail);
-    $("mapInfo").textContent =
-      map.edges.length + " von " + map.total_edges + " Übergängen sichtbar";
+    // Der Regler begrenzt die Anzahl der Pfade. Gezeigt werden immer die häufigsten -
+    // das hält die Karte auch bei einem Log mit Hunderten Übergängen lesbar.
+    const map = await api("/logs/" + logId + "/process-map?max_edges=" + $("paths").value);
+    const hidden = map.total_edges - map.edges.length;
+    $("mapInfo").textContent = hidden
+      ? map.edges.length + " der " + map.total_edges + " Übergänge (die häufigsten)"
+      : "alle " + map.total_edges + " Übergänge";
     drawProcessMap(map);
   } catch (err) { msg(err.message, true); }
 }
@@ -470,6 +486,7 @@ function fitDiagram(svg, naturalWidth) {
   svg.style.minWidth = Math.round(naturalWidth * MIN_SCALE) + "px";
 }
 const NODE_H = 34, LAYER_GAP = 42, NODE_GAP = 18, PAD = 14, CHAR_W = 7, MAX_LABEL = 26;
+const MAX_EDGE_LABELS = 24;  // darüber verdecken sich die Zahlen gegenseitig
 
 function el(tag, attrs = {}) {
   const node = document.createElementNS(SVG_NS, tag);
@@ -603,6 +620,7 @@ function drawProcessMap(map) {
 
   // Kanten zuerst, damit die Kaesten darueber liegen
   const maxCount = Math.max(...edges.map((e) => e.count), 1);
+  const showEdgeLabels = edges.length <= MAX_EDGE_LABELS;
   for (const e of edges) {
     const a = box.get(e.source), b = box.get(e.target);
     const isLoop = back.has(e.source + "\u0000" + e.target);
@@ -630,9 +648,13 @@ function drawProcessMap(map) {
          ? ", Wartezeit im Mittel " + formatDuration(e.median_wait_seconds) : "");
     path.append(title);
     g.append(path);
-    const label = el("text", { x: labelX, y: labelY, "text-anchor": "middle" });
-    label.textContent = e.count;
-    g.append(label);
+    // Bei vielen Pfeilen würden die Zahlen einander überlagern. Dann trägt allein
+    // die Strichstärke die Häufigkeit, die genaue Zahl steht im Tooltip.
+    if (showEdgeLabels) {
+      const label = el("text", { x: labelX, y: labelY, "text-anchor": "middle" });
+      label.textContent = compact(e.count);
+      g.append(label);
+    }
     svg.append(g);
   }
 
@@ -652,7 +674,7 @@ function drawProcessMap(map) {
     if (!terminal) {
       const count = el("text", { class: "count", x: b.x + b.w / 2, y: b.y + 29,
         "text-anchor": "middle" });
-      count.textContent = n.count.toLocaleString("de") + "×";
+      count.textContent = compact(n.count) + "×";
       g.append(count);
     }
     const title = el("title");

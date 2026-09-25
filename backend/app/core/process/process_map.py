@@ -31,15 +31,24 @@ class ProcessMap(BaseModel):
     total_edges: int
 
 
-def build_process_map(log: pd.DataFrame, detail: float = 1.0) -> ProcessMap:
+def build_process_map(
+    log: pd.DataFrame, detail: float = 1.0, max_edges: int | None = None
+) -> ProcessMap:
     """Baut die Prozesslandkarte.
 
     detail zwischen 0 und 1: Anteil aller Übergänge, den die gezeigten Kanten abdecken sollen.
-    1.0 zeigt alles, kleinere Werte blenden seltene Pfade aus, damit das Bild lesbar bleibt.
+    1.0 zeigt alles, kleinere Werte blenden seltene Pfade aus.
+
+    max_edges begrenzt zusätzlich die Anzahl der Kanten auf die häufigsten. Bei dichten
+    Logs ist das die wirksamere Bremse: Ein Anteil von 60 % können immer noch Hunderte
+    Kanten sein, eine feste Obergrenze bleibt dagegen in jedem Fall lesbar.
     """
     detail = min(max(detail, 0.0), 1.0)
     edges = _all_edges(log)
     kept = _filter_edges(edges, detail)
+    if max_edges is not None:
+        # _all_edges sortiert absteigend nach Häufigkeit, _filter_edges behält die Reihenfolge.
+        kept = kept.head(max_edges).reset_index(drop=True)
 
     activity_counts = log[ACTIVITY].value_counts()
     ids = set(kept["source"]) | set(kept["target"])

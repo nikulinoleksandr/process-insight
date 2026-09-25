@@ -84,3 +84,18 @@ def test_render_model_uses_project_colours():
         assert "Segoe UI" in svg
         assert 'fill="white"' not in svg  # keine Vorgabefarbe von pm4py mehr
         assert "Times" not in svg
+
+
+def test_process_map_max_edges_keeps_the_most_frequent():
+    """Die feste Obergrenze ist die wirksame Bremse bei dichten Logs."""
+    rows = [("1", "A", 0), ("1", "B", 1), ("1", "C", 2), ("1", "D", 3)]
+    rows += [(str(i), "A", 0) for i in range(2, 12)]
+    rows += [(str(i), "B", 1) for i in range(2, 12)]
+    full = build_process_map(make_log(rows))
+    limited = build_process_map(make_log(rows), max_edges=2)
+    assert len(limited.edges) == 2
+    assert limited.total_edges == full.total_edges  # Gesamtzahl bleibt sichtbar
+    strongest = max(e.count for e in full.edges)
+    assert limited.edges[0].count == strongest
+    # Knoten richten sich nach den übrigen Kanten
+    assert set(n.id for n in limited.nodes) >= {START, END}
