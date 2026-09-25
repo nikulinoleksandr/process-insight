@@ -16,3 +16,8 @@ __pycache__/
 
 # Jupyter
 .ipynb_checkpoints/
+
+# Backend: Laufzeitdaten und Werkzeug-Caches
+storage/
+.pytest_cache/
+.ruff_cache/

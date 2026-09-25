@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Process Insight</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --text: #1a1d21; --muted: #6b7280;
+    --line: #e3e6ea; --accent: #2563eb; --accent-text: #ffffff;
+    --high: #dc2626; --medium: #d97706; --low: #6b7280;
+    --node: #eef2ff; --node-line: #c7d2fe; --edge: #94a3b8; --loop: #d97706;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16181c; --card: #1f2227; --text: #e8eaed; --muted: #9aa0a8;
+      --line: #32363c; --accent: #3b82f6;
+      --node: #23304a; --node-line: #3b5486; --edge: #6b7683;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0 16px 64px; background: var(--bg); color: var(--text);
+    font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; }
+  header { padding: 40px 0 8px; }
+  h1 { margin: 0 0 4px; font-size: 26px; }
+  .sub { color: var(--muted); margin: 0 0 28px; }
+
+  .step { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+          padding: 22px; margin-bottom: 16px; }
+  .step h2 { margin: 0 0 4px; font-size: 18px; display: flex; align-items: center; gap: 10px; }
+  .num { display: inline-flex; align-items: center; justify-content: center;
+         width: 26px; height: 26px; border-radius: 50%; background: var(--accent);
+         color: var(--accent-text); font-size: 14px; font-weight: 600; flex: none; }
+  .hint { color: var(--muted); font-size: 14px; margin: 0 0 16px 36px; }
+  .body { margin-left: 36px; }
+  h3.sec { font-size: 15px; margin: 24px 0 8px; }
+
+  button { font: inherit; border-radius: 8px; padding: 10px 18px; cursor: pointer;
+           border: 1px solid var(--line); background: var(--card); color: var(--text); }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: transparent; }
+  button:disabled { opacity: .5; cursor: default; }
+
+  .drop { border: 2px dashed var(--line); border-radius: 10px; padding: 28px;
+          text-align: center; color: var(--muted); cursor: pointer; }
+  .drop.over { border-color: var(--accent); color: var(--text); }
+  .or { color: var(--muted); font-size: 14px; margin: 14px 0; text-align: center; }
+
+  .tiles { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+  .tile { border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+  .tile b { display: block; font-size: 20px; }
+  .tile span { color: var(--muted); font-size: 13px; }
+
+  .mapbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+            font-size: 14px; margin-bottom: 10px; }
+  .mapbar input[type=range] { width: 180px; }
+  .mapbox { border: 1px solid var(--line); border-radius: 8px; overflow: auto;
+            max-height: 560px; background: var(--bg); }
+  .mapbox svg { display: block; }
+  .node rect { fill: var(--node); stroke: var(--node-line); }
+  .node.terminal rect { fill: var(--card); stroke: var(--muted); stroke-dasharray: 4 3; }
+  .node text { fill: var(--text); font-size: 13px; }
+  .node .count { fill: var(--muted); font-size: 11px; }
+  .edge path { fill: none; stroke: var(--edge); }
+  .edge.loop path { stroke: var(--loop); stroke-dasharray: 5 4; }
+  .edge text { fill: var(--muted); font-size: 11px; }
+  .legend { color: var(--muted); font-size: 12px; margin-top: 8px; }
+
+  .insight { border: 1px solid var(--line); border-left-width: 4px; border-radius: 8px;
+             padding: 14px 16px; margin-bottom: 10px; }
+  .insight.high { border-left-color: var(--high); }
+  .insight.medium { border-left-color: var(--medium); }
+  .insight.low { border-left-color: var(--low); }
+  .insight h3 { margin: 0 0 4px; font-size: 16px; }
+  .insight p { margin: 0; color: var(--muted); font-size: 14px; }
+  .tag { font-size: 12px; color: var(--muted); }
+  details { margin-top: 10px; }
+  summary { cursor: pointer; font-size: 14px; color: var(--accent); }
+  table { border-collapse: collapse; margin-top: 8px; font-size: 14px; width: 100%; }
+  td { padding: 3px 12px 3px 0; border-bottom: 1px solid var(--line); }
+  td:first-child { color: var(--muted); }
+
+  label { display: block; margin-bottom: 10px; font-size: 14px; }
+  .mapbar label { display: inline; margin: 0; }
+  select { font: inherit; padding: 6px; width: 100%; max-width: 320px; margin-top: 2px;
+           background: var(--card); color: var(--text); border: 1px solid var(--line);
+           border-radius: 6px; }
+
+  .msg { padding: 10px 14px; border-radius: 8px; border: 1px solid var(--line);
+         background: var(--card); margin-bottom: 16px; font-size: 14px; }
+  .msg.error { border-color: var(--high); color: var(--high); }
+  footer { color: var(--muted); font-size: 13px; text-align: center; margin-top: 28px; }
+  footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Process Insight</h1>
+    <p class="sub">Lade ein Event-Log hoch und finde heraus, wo dein Prozess hakt.</p>
+  </header>
+
+  <div id="msg" class="msg" hidden></div>
+
+  <!-- Schritt 1 -->
+  <section class="step" id="step1">
+    <h2><span class="num">1</span> Event-Log laden</h2>
+    <p class="hint">Eine XES- oder CSV-Datei mit den Spalten Fall-ID, Aktivität und Zeitstempel.</p>
+    <div class="body">
+      <div class="drop" id="drop">
+        Datei hierher ziehen oder klicken zum Auswählen
+        <input type="file" id="file" accept=".xes,.csv" hidden>
+      </div>
+      <p class="or">oder</p>
+      <button id="demoBtn">Demo-Log ohne eigene Datei ausprobieren</button>
+    </div>
+  </section>
+
+  <!-- Schritt 1b: Spalten zuordnen (nur bei CSV) -->
+  <section class="step" id="stepMap" hidden>
+    <h2><span class="num">!</span> Spalten zuordnen</h2>
+    <p class="hint">Die CSV-Datei wurde gelesen. Sag noch, welche Spalte was bedeutet.</p>
+    <div class="body">
+      <label>Fall-ID <select id="mapCase"></select></label>
+      <label>Aktivität <select id="mapActivity"></select></label>
+      <label>Zeitstempel <select id="mapTimestamp"></select></label>
+      <label>Ressource (optional) <select id="mapResource"></select></label>
+      <button class="primary" id="mapBtn">Weiter</button>
+    </div>
+  </section>
+
+  <!-- Schritt 2 -->
+  <section class="step" id="step2" hidden>
+    <h2><span class="num">2</span> Überblick</h2>
+    <p class="hint" id="logName"></p>
+    <div class="body">
+      <div class="tiles" id="tiles"></div>
+
+      <h3 class="sec">Prozessmodell</h3>
+      <div class="mapbar">
+        <label for="detail">Detailgrad</label>
+        <input type="range" id="detail" min="0.2" max="1" step="0.1" value="1">
+        <span class="tag" id="mapInfo"></span>
+      </div>
+      <div class="mapbox"><svg id="graph"></svg></div>
+      <p class="legend">
+        Jeder Kasten ist eine Aktivität, die Zahl darunter sagt, wie oft sie vorkommt.
+        Pfeile zeigen, welche Aktivität direkt auf welche folgt; dicker heißt häufiger.
+        <span style="color:var(--loop)">Orange gestrichelte Pfeile</span> laufen zurück &ndash;
+        dort wird etwas wiederholt.
+      </p>
+    </div>
+  </section>
+
+  <!-- Schritt 3 -->
+  <section class="step" id="step3" hidden>
+    <h2><span class="num">3</span> Probleme finden</h2>
+    <p class="hint">Die Analyse prüft das Log auf Nacharbeit, Engpässe, lange Laufzeiten und Ausreißer.</p>
+    <div class="body">
+      <button class="primary" id="analyzeBtn">Analyse starten</button>
+      <div id="insights"></div>
+    </div>
+  </section>
+
+  <footer>
+    <a href="/docs">Technische API-Dokumentation</a>
+  </footer>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let logId = null;
+
+function show(el, on = true) { el.hidden = !on; }
+
+function msg(text, isError = false) {
+  const m = $("msg");
+  if (!text) { show(m, false); return; }
+  m.textContent = text;
+  m.className = "msg" + (isError ? " error" : "");
+  show(m, true);
+}
+
+async function api(path, options) {
+  const res = await fetch("/api" + path, options);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || "Fehler " + res.status);
+  return data;
+}
+
+function formatDuration(seconds) {
+  const days = seconds / 86400;
+  if (days >= 1) return days.toFixed(1) + " Tage";
+  const hours = seconds / 3600;
+  if (hours >= 1) return hours.toFixed(1) + " Std.";
+  return Math.round(seconds / 60) + " Min.";
+}
+
+// --- Schritt 1: Log laden ------------------------------------------------
+$("drop").onclick = () => $("file").click();
+$("drop").ondragover = (e) => { e.preventDefault(); $("drop").classList.add("over"); };
+$("drop").ondragleave = () => $("drop").classList.remove("over");
+$("drop").ondrop = (e) => {
+  e.preventDefault();
+  $("drop").classList.remove("over");
+  if (e.dataTransfer.files[0]) upload(e.dataTransfer.files[0]);
+};
+$("file").onchange = (e) => { if (e.target.files[0]) upload(e.target.files[0]); };
+
+async function upload(file) {
+  msg("Datei wird gelesen …");
+  const form = new FormData();
+  form.append("file", file);
+  try {
+    handleLog(await api("/logs", { method: "POST", body: form }));
+  } catch (err) { msg(err.message, true); }
+}
+
+$("demoBtn").onclick = async () => {
+  msg("Demo-Log wird geladen …");
+  try { handleLog(await api("/demo")); }
+  catch (err) { msg(err.message, true); }
+};
+
+// --- Schritt 1b: Spalten zuordnen (nur bei CSV) --------------------------
+function handleLog(log) {
+  logId = log.id;
+  if (log.status === "needs_mapping") { showMapping(log); return; }
+  if (log.status === "failed") { msg("Das Log konnte nicht gelesen werden.", true); return; }
+  msg("");
+  show($("stepMap"), false);
+  showOverview(log);
+}
+
+function showMapping(log) {
+  msg("");
+  const columns = log.csv_preview.columns;
+  const suggestion = log.csv_preview.suggested_mapping || {};
+  const fields = { case: "mapCase", activity: "mapActivity",
+                   timestamp: "mapTimestamp", resource: "mapResource" };
+  for (const [field, id] of Object.entries(fields)) {
+    const sel = $(id);
+    sel.innerHTML = "";
+    if (field === "resource") sel.add(new Option("— keine —", ""));
+    for (const c of columns) sel.add(new Option(c, c));
+    if (suggestion[field]) sel.value = suggestion[field];
+  }
+  show($("stepMap"));
+}
+
+$("mapBtn").onclick = async () => {
+  msg("Spalten werden übernommen …");
+  try {
+    handleLog(await api("/logs/" + logId + "/mapping", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        case: $("mapCase").value,
+        activity: $("mapActivity").value,
+        timestamp: $("mapTimestamp").value,
+        resource: $("mapResource").value || null,
+      }),
+    }));
+  } catch (err) { msg(err.message, true); }
+};
+
+// --- Schritt 2: Kennzahlen und Prozessmodell -----------------------------
+async function showOverview(log) {
+  try {
+    $("logName").textContent = log.name;
+    const s = await api("/logs/" + logId + "/summary");
+    const tiles = [
+      [s.n_cases.toLocaleString("de"), "Fälle"],
+      [s.n_events.toLocaleString("de"), "Ereignisse"],
+      [s.n_activities, "Aktivitäten"],
+      [s.n_variants, "Varianten"],
+      [formatDuration(s.case_duration.median), "Durchlaufzeit (Median)"],
+      [formatDuration(s.case_duration.p90), "Langsamste 10 %"],
+    ];
+    $("tiles").replaceChildren(...tiles.map(([value, caption]) => {
+      const tile = document.createElement("div");
+      tile.className = "tile";
+      const b = document.createElement("b");
+      b.textContent = value;
+      const span = document.createElement("span");
+      span.textContent = caption;
+      tile.append(b, span);
+      return tile;
+    }));
+    $("insights").replaceChildren();
+    show($("step2"));
+    show($("step3"));
+    await loadProcessMap();
+  } catch (err) { msg(err.message, true); }
+}
+
+$("detail").oninput = () => { if (logId) loadProcessMap(); };
+
+async function loadProcessMap() {
+  const detail = $("detail").value;
+  try {
+    const map = await api("/logs/" + logId + "/process-map?detail=" + detail);
+    $("mapInfo").textContent =
+      map.edges.length + " von " + map.total_edges + " Übergängen sichtbar";
+    drawProcessMap(map);
+  } catch (err) { msg(err.message, true); }
+}
+
+// --- Prozessmodell zeichnen ----------------------------------------------
+// Eigenes kleines Layout, damit die Seite ohne zusaetzliche Bibliothek auskommt:
+// 1. Rueckwaertskanten (Schleifen) finden, 2. Knoten in Ebenen einteilen,
+// 3. Reihenfolge je Ebene so waehlen, dass sich wenig Pfeile kreuzen.
+const SVG_NS = "http://www.w3.org/2000/svg";
+const NODE_H = 34, LAYER_GAP = 92, NODE_GAP = 22, PAD = 24, CHAR_W = 7, MAX_LABEL = 26;
+
+function el(tag, attrs = {}) {
+  const node = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+  return node;
+}
+
+function findBackEdges(ids, successors) {
+  // Tiefensuche: eine Kante auf einen Knoten, der gerade auf dem Stapel liegt, ist eine Schleife.
+  const state = new Map(ids.map((id) => [id, 0]));  // 0 = neu, 1 = auf dem Stapel, 2 = fertig
+  const back = new Set();
+  const visit = (v) => {
+    state.set(v, 1);
+    for (const w of successors.get(v)) {
+      if (state.get(w) === 1) back.add(v + "\u0000" + w);
+      else if (state.get(w) === 0) visit(w);
+    }
+    state.set(v, 2);
+  };
+  for (const id of ids) if (state.get(id) === 0) visit(id);
+  return back;
+}
+
+function assignLayers(ids, edges, back) {
+  // Laengster Weg vom Start, Schleifen ausgenommen. So steht jede Aktivitaet
+  // hinter allem, was ihr normalerweise vorausgeht.
+  const forward = edges.filter((e) => !back.has(e.source + "\u0000" + e.target));
+  const indegree = new Map(ids.map((id) => [id, 0]));
+  const successors = new Map(ids.map((id) => [id, []]));
+  for (const e of forward) {
+    successors.get(e.source).push(e.target);
+    indegree.set(e.target, indegree.get(e.target) + 1);
+  }
+  const layer = new Map(ids.map((id) => [id, 0]));
+  const queue = ids.filter((id) => indegree.get(id) === 0);
+  while (queue.length) {
+    const v = queue.shift();
+    for (const w of successors.get(v)) {
+      layer.set(w, Math.max(layer.get(w), layer.get(v) + 1));
+      if (indegree.set(w, indegree.get(w) - 1).get(w) === 0) queue.push(w);
+    }
+  }
+  return layer;
+}
+
+function orderWithinLayers(rows, edges) {
+  // Schwerpunktverfahren: jeder Knoten rueckt dorthin, wo seine Vorgaenger stehen.
+  for (let pass = 0; pass < 3; pass++) {
+    const index = new Map();
+    rows.forEach((row) => row.forEach((n, i) => index.set(n.id, i)));
+    for (const row of rows) {
+      const score = new Map();
+      for (const n of row) {
+        const neighbours = edges
+          .filter((e) => e.target === n.id || e.source === n.id)
+          .map((e) => index.get(e.source === n.id ? e.target : e.source))
+          .filter((i) => i !== undefined);
+        score.set(n.id, neighbours.length
+          ? neighbours.reduce((a, b) => a + b, 0) / neighbours.length
+          : index.get(n.id));
+      }
+      row.sort((a, b) => score.get(a.id) - score.get(b.id));
+    }
+  }
+}
+
+function drawProcessMap(map) {
+  const svg = $("graph");
+  svg.replaceChildren();
+  if (!map.nodes.length) return;
+
+  const ids = map.nodes.map((n) => n.id);
+  const known = new Set(ids);
+  const edges = map.edges.filter((e) => known.has(e.source) && known.has(e.target));
+  const successors = new Map(ids.map((id) => [id, []]));
+  for (const e of edges) successors.get(e.source).push(e.target);
+
+  const back = findBackEdges(ids, successors);
+  const layer = assignLayers(ids, edges, back);
+  // Ende immer eine Ebene unter allem anderen, damit kein Pfeil waagerecht laeuft
+  const lastLayer = Math.max(...ids.filter((id) => id !== "__end__").map((id) => layer.get(id)));
+  layer.set("__end__", lastLayer + 1);
+
+  const rows = [];
+  for (const n of map.nodes) {
+    const i = layer.get(n.id);
+    (rows[i] ||= []).push(n);
+  }
+  const filled = rows.filter(Boolean);
+  orderWithinLayers(filled, edges);
+
+  // Positionen berechnen
+  const box = new Map();
+  let width = 0;
+  filled.forEach((row, i) => {
+    const widths = row.map((n) => Math.min(240, Math.max(96, n.label.length * CHAR_W + 30)));
+    const rowWidth = widths.reduce((a, b) => a + b, 0) + NODE_GAP * (row.length - 1);
+    width = Math.max(width, rowWidth);
+    let x = 0;
+    row.forEach((n, j) => {
+      box.set(n.id, { x, y: PAD + i * LAYER_GAP, w: widths[j], row: i, offset: rowWidth });
+      x += widths[j] + NODE_GAP;
+    });
+  });
+  for (const b of box.values()) b.x += PAD + (width - b.offset) / 2;
+
+  const height = PAD * 2 + filled.length * LAYER_GAP - (LAYER_GAP - NODE_H);
+  const total = width + PAD * 2 + 70;  // Platz rechts fuer Schleifen
+  svg.setAttribute("width", total);
+  svg.setAttribute("height", height);
+  svg.setAttribute("viewBox", "0 0 " + total + " " + height);
+
+  const defs = el("defs");
+  for (const [id, color] of [["arrow", "var(--edge)"], ["arrowLoop", "var(--loop)"]]) {
+    const marker = el("marker", { id, viewBox: "0 0 8 8", refX: 7, refY: 4,
+      markerWidth: 7, markerHeight: 7, orient: "auto-start-reverse" });
+    marker.append(el("path", { d: "M0,0 L8,4 L0,8 z", fill: color }));
+    defs.append(marker);
+  }
+  svg.append(defs);
+
+  // Kanten zuerst, damit die Kaesten darueber liegen
+  const maxCount = Math.max(...edges.map((e) => e.count), 1);
+  for (const e of edges) {
+    const a = box.get(e.source), b = box.get(e.target);
+    const isLoop = back.has(e.source + "\u0000" + e.target);
+    const g = el("g", { class: "edge" + (isLoop ? " loop" : "") });
+    const x1 = a.x + a.w / 2, y1 = a.y + NODE_H;
+    const x2 = b.x + b.w / 2, y2 = b.y;
+    let d, labelX, labelY;
+    if (isLoop) {
+      const side = width + PAD + 40;
+      d = "M" + (a.x + a.w) + "," + (a.y + NODE_H / 2) + " C" + side + "," + (a.y + NODE_H / 2)
+        + " " + side + "," + (b.y + NODE_H / 2) + " " + (b.x + b.w) + "," + (b.y + NODE_H / 2);
+      labelX = side - 10; labelY = (a.y + b.y) / 2 + NODE_H / 2;
+    } else {
+      const mid = (y1 + y2) / 2;
+      d = "M" + x1 + "," + y1 + " C" + x1 + "," + mid + " " + x2 + "," + mid + " " + x2 + "," + y2;
+      labelX = (x1 + x2) / 2 + 6; labelY = mid;
+    }
+    const path = el("path", { d, "marker-end": isLoop ? "url(#arrowLoop)" : "url(#arrow)",
+      "stroke-width": (1 + 3 * (e.count / maxCount)).toFixed(1) });
+    const title = el("title");
+    title.textContent = e.source + " → " + e.target + ": " + e.count + " mal"
+      + (e.median_wait_seconds != null
+         ? ", Wartezeit im Mittel " + formatDuration(e.median_wait_seconds) : "");
+    path.append(title);
+    g.append(path);
+    const label = el("text", { x: labelX, y: labelY, "text-anchor": "middle" });
+    label.textContent = e.count;
+    g.append(label);
+    svg.append(g);
+  }
+
+  // Knoten
+  for (const n of map.nodes) {
+    const b = box.get(n.id);
+    if (!b) continue;
+    const terminal = n.kind !== "activity";
+    const g = el("g", { class: "node" + (terminal ? " terminal" : "") });
+    g.append(el("rect", { x: b.x, y: b.y, width: b.w, height: NODE_H,
+      rx: terminal ? NODE_H / 2 : 7 }));
+    const text = el("text", { x: b.x + b.w / 2, y: b.y + (terminal ? 22 : 18),
+      "text-anchor": "middle" });
+    text.textContent = n.label.length > MAX_LABEL
+      ? n.label.slice(0, MAX_LABEL - 1) + "…" : n.label;
+    g.append(text);
+    if (!terminal) {
+      const count = el("text", { class: "count", x: b.x + b.w / 2, y: b.y + 29,
+        "text-anchor": "middle" });
+      count.textContent = n.count.toLocaleString("de") + "×";
+      g.append(count);
+    }
+    const title = el("title");
+    title.textContent = n.label + " – " + n.count.toLocaleString("de") + " mal";
+    g.append(title);
+    svg.append(g);
+  }
+}
+
+// --- Schritt 3: Analyse --------------------------------------------------
+$("analyzeBtn").onclick = async () => {
+  $("analyzeBtn").disabled = true;
+  $("insights").textContent = "Analyse läuft …";
+  try {
+    let analysis = await api("/logs/" + logId + "/analyses", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ config: {} }),
+    });
+    while (analysis.status === "pending" || analysis.status === "running") {
+      await new Promise((r) => setTimeout(r, 1000));
+      analysis = await api("/analyses/" + analysis.id);
+    }
+    if (analysis.status === "failed") {
+      throw new Error(analysis.error_message || "Die Analyse ist fehlgeschlagen.");
+    }
+    showInsights(analysis.result.insights);
+  } catch (err) {
+    $("insights").replaceChildren();
+    msg(err.message, true);
+  } finally {
+    $("analyzeBtn").disabled = false;
+  }
+};
+
+const SEVERITY = { high: "hoch", medium: "mittel", low: "niedrig" };
+
+function showInsights(insights) {
+  if (!insights.length) {
+    $("insights").textContent = "Keine Auffälligkeiten gefunden.";
+    return;
+  }
+  $("insights").replaceChildren(...insights.map((i) => {
+    const boxEl = document.createElement("div");
+    boxEl.className = "insight " + i.severity;
+
+    const title = document.createElement("h3");
+    title.textContent = i.title;
+
+    const text = document.createElement("p");
+    text.textContent = i.summary;
+
+    const meta = document.createElement("p");
+    meta.className = "tag";
+    meta.textContent = "Schweregrad: " + SEVERITY[i.severity] + " · "
+      + i.affected_case_count.toLocaleString("de") + " Fälle betroffen ("
+      + (i.affected_case_share * 100).toFixed(1) + " %)";
+
+    const details = document.createElement("details");
+    const summary = document.createElement("summary");
+    summary.textContent = "Details";
+    const table = document.createElement("table");
+    for (const [name, value] of Object.entries(i.metrics)) {
+      const tr = table.insertRow();
+      tr.insertCell().textContent = name;
+      tr.insertCell().textContent = value;
+    }
+    const rule = document.createElement("p");
+    rule.className = "tag";
+    rule.textContent = "Regel: " + i.severity_rule;
+    details.append(summary, table, rule);
+
+    boxEl.append(title, text, meta, details);
+    return boxEl;
+  }));
+}
+</script>
+</body>
+</html>
