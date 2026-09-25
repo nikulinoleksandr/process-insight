@@ -4,6 +4,7 @@
 # Daten
 data/
 
+
 # Umgebungsvariablen / Secrets
 .env
 .env.*
