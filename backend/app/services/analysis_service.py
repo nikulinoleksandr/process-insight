@@ -6,6 +6,8 @@ import logging
 import uuid
 from typing import Any
 
+from pydantic import ValidationError
+
 from app.core.insights.engine import AnalysisResult, InvalidConfigError, run_analysis
 from app.core.insights.engine import validate_config as _validate
 from app.services.errors import BadInputError, ConflictError, NotFoundError
@@ -39,6 +41,10 @@ class AnalysisService:
         config_hash = hashlib.sha256(json.dumps(normalized, sort_keys=True).encode()).hexdigest()
         existing = self.db.find_reusable_analysis(log_id, config_hash)
         if existing:
+            # result() verwirft ein Ergebnis, das nicht mehr zum Schema passt,
+            # und setzt die Analyse auf "pending" - dann muss sie neu laufen.
+            if existing["status"] == "done" and self.result(existing["id"]) is None:
+                return self.get(existing["id"]), True
             return existing, False
 
         analysis_id = str(uuid.uuid4())
@@ -72,5 +78,16 @@ class AnalysisService:
         record = self.get(analysis_id)
         if record["status"] != "done":
             return None
-        text = self.files.result_path(analysis_id).read_text(encoding="utf-8")
-        return AnalysisResult.model_validate_json(text)
+        path = self.files.result_path(analysis_id)
+        try:
+            return AnalysisResult.model_validate_json(path.read_text(encoding="utf-8"))
+        except (OSError, ValidationError):
+            # Das gespeicherte Ergebnis passt nicht mehr zum aktuellen Schema - etwa
+            # weil LogSummary oder Insight seitdem ein Feld dazubekommen haben.
+            # Verwerfen statt abstürzen; die Analyse wird dann neu gerechnet.
+            logger.warning("Ergebnis von %s ist unlesbar und wird verworfen", analysis_id)
+            path.unlink(missing_ok=True)
+            self.db.update_analysis(
+                analysis_id, status="pending", started_at=None, finished_at=None
+            )
+            return None

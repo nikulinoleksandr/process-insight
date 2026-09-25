@@ -106,6 +106,43 @@ def test_process_map_detail_parameter(client):
     assert client.get(f"/api/logs/{log_id}/process-map", params={"detail": 2}).status_code == 422
 
 
+def test_veraltetes_ergebnis_wird_neu_gerechnet(client, tmp_path):
+    """Ein gespeichertes Ergebnis aus einer älteren Schema-Version darf nicht abstürzen.
+
+    Passiert, sobald LogSummary oder Insight ein Pflichtfeld dazubekommen: Die JSON-Datei
+    auf der Platte kennt es nicht. Statt HTTP 500 soll die Analyse neu laufen.
+    """
+    import json
+    from pathlib import Path
+
+    log_id = client.get("/api/demo").json()["id"]
+    first = client.post(f"/api/logs/{log_id}/analyses", json={"config": {}}).json()
+    assert client.get(f"/api/analyses/{first['id']}").json()["status"] == "done"
+
+    # Ergebnisdatei so verfälschen, wie es eine Schema-Erweiterung tun würde
+    result_file = next(Path(tmp_path).rglob(f"{first['id']}.json"))
+    stored = json.loads(result_file.read_text(encoding="utf-8"))
+    del stored["log_summary"]["activity_cases"]
+    result_file.write_text(json.dumps(stored), encoding="utf-8")
+
+    again = client.post(f"/api/logs/{log_id}/analyses", json={"config": {}})
+    assert again.status_code == 202
+    final = client.get(f"/api/analyses/{again.json()['id']}").json()
+    assert final["status"] == "done"
+    assert final["result"]["log_summary"]["activity_cases"]
+
+
+def test_model_endpoint_liefert_svg(client):
+    """Der Umschalter der Oberfläche holt BPMN und Petri-Netz als fertiges Bild."""
+    log_id = client.get("/api/demo").json()["id"]
+    for kind in ("bpmn", "petri"):
+        response = client.get(f"/api/logs/{log_id}/model/{kind}")
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("image/svg+xml")
+        assert "<svg" in response.text
+    assert client.get(f"/api/logs/{log_id}/model/quatsch").status_code == 422
+
+
 def test_startseite_liefert_oberflaeche(client):
     """Unter "/" kommt die Oberflaeche, die API bleibt unter "/api" erreichbar."""
     response = client.get("/")

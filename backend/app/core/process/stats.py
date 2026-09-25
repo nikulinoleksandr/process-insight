@@ -28,6 +28,7 @@ class LogSummary(BaseModel):
     last_event: str
     case_duration: DurationStats
     activity_counts: dict[str, int]
+    activity_cases: dict[str, int]  # in wie vielen Fällen die Aktivität vorkommt
 
 
 def case_durations(log: pd.DataFrame) -> pd.Series:
@@ -56,4 +57,7 @@ def summarize(log: pd.DataFrame) -> LogSummary:
             max=float(seconds.max()),
         ),
         activity_counts={str(k): int(v) for k, v in log[ACTIVITY].value_counts().items()},
+        activity_cases={
+            str(k): int(v) for k, v in log.groupby(ACTIVITY, sort=False)[CASE].nunique().items()
+        },
     )

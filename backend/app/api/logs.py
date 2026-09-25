@@ -1,10 +1,11 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, UploadFile
+from fastapi import APIRouter, Depends, Query, Response, UploadFile
 
 from app.api.deps import get_log_service
 from app.api.schemas import CsvPreviewOut, LogOut, MappingIn
 from app.core.importing.normalize import ColumnMapping
+from app.core.process.models import ModelKind, render_model
 from app.core.process.process_map import ProcessMap, build_process_map
 from app.core.process.stats import LogSummary, summarize
 from app.core.process.variants import Variant, top_variants
@@ -57,6 +58,22 @@ def get_process_map(
     detail: Annotated[float, Query(ge=0, le=1, description="1 = alle Pfade")] = 1.0,
 ) -> ProcessMap:
     return build_process_map(logs.events(log_id), detail)
+
+
+@router.get(
+    "/{log_id}/model/{kind}",
+    summary="Prozessmodell als SVG-Bild (bpmn oder petri)",
+    response_class=Response,
+    responses={200: {"content": {"image/svg+xml": {}}, "description": "Das Modell als SVG"}},
+)
+def get_model(log_id: str, kind: ModelKind, logs: Logs) -> Response:
+    svg = render_model(logs.events(log_id), kind)
+    # Das Bild ändert sich für ein Log nie, darf der Browser also zwischenspeichern.
+    return Response(
+        content=svg,
+        media_type="image/svg+xml",
+        headers={"Cache-Control": "private, max-age=3600"},
+    )
 
 
 @router.get("/{log_id}/variants", response_model=list[Variant], summary="Häufigste Varianten")

@@ -23,7 +23,9 @@
     margin: 0; padding: 0 16px 64px; background: var(--bg); color: var(--text);
     font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
   }
-  .wrap { max-width: 900px; margin: 0 auto; }
+  /* Breit für die Diagramme; Fließtext bleibt schmal genug zum Lesen. */
+  .wrap { max-width: 1600px; margin: 0 auto; }
+  .sub, .hint, .legend, .insight p { max-width: 78ch; }
   header { padding: 40px 0 8px; }
   h1 { margin: 0 0 4px; font-size: 26px; }
   .sub { color: var(--muted); margin: 0 0 28px; }
@@ -31,7 +33,7 @@
   .step { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
           padding: 22px; margin-bottom: 16px; }
   .step h2 { margin: 0 0 4px; font-size: 18px; display: flex; align-items: center; gap: 10px; }
-  .num { display: inline-flex; align-items: center; justify-content: center;
+  .step h2 .num { display: inline-flex; align-items: center; justify-content: center;
          width: 26px; height: 26px; border-radius: 50%; background: var(--accent);
          color: var(--accent-text); font-size: 14px; font-weight: 600; flex: none; }
   .hint { color: var(--muted); font-size: 14px; margin: 0 0 16px 36px; }
@@ -53,13 +55,56 @@
   .tile b { display: block; font-size: 20px; }
   .tile span { color: var(--muted); font-size: 13px; }
 
+  .tablebox { border: 1px solid var(--line); border-radius: 8px; overflow: auto;
+              max-height: 320px; max-width: 760px; }
+  table.acts { margin: 0; }
+  table.acts th { position: sticky; top: 0; background: var(--card); text-align: left;
+                  font-size: 13px; color: var(--muted); font-weight: 600;
+                  padding: 8px 12px; border-bottom: 1px solid var(--line); }
+  table.acts td { padding: 6px 12px; color: var(--text); }
+  table.acts tr:last-child td { border-bottom: none; }
+  /* Zahlenspalten: schmal, rechtsbündig, gleiche Ziffernbreite */
+  table.acts th.numeric, table.acts td.numeric {
+    text-align: right; width: 110px; font-variant-numeric: tabular-nums;
+  }
+
+  .switch { display: inline-flex; border: 1px solid var(--line); border-radius: 8px;
+            overflow: hidden; }
+  .switch button { border: none; border-radius: 0; padding: 8px 16px; font-size: 14px; }
+  .switch button + button { border-left: 1px solid var(--line); }
+  .switch button.active { background: var(--accent); color: var(--accent-text); }
+
   .mapbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
             font-size: 14px; margin-bottom: 10px; }
   .mapbar input[type=range] { width: 180px; }
-  .mapbox { border: 1px solid var(--line); border-radius: 8px; overflow: auto;
-            max-height: 560px; background: var(--bg); }
-  .mapbox svg { display: block; }
-  .node rect { fill: var(--node); stroke: var(--node-line); }
+  /* Alle drei Ansichten liegen im selben Rahmen. Der Rahmen holt sich die
+     Einrückungen von Karte und Schritt zurück - jedes Pixel Breite zählt,
+     weil die Breite bei liegenden Prozessgraphen immer der Engpass ist. */
+  .mapbox, .modelbox { border: 1px solid var(--line); border-radius: 8px;
+                       background: var(--bg); padding: 10px;
+                       overflow-x: auto; overflow-y: hidden; max-height: 72vh; }
+  @media (min-width: 700px) {
+    .mapbox, .modelbox { margin-left: -58px; margin-right: -22px; }
+  }
+  /* Breite steuert loadDiagram(): nie größer als die natürliche Größe (sonst
+     unnötig aufgeblasen), nie kleiner als 70 % davon (sonst unlesbar). */
+  svg.diagram { display: block; width: 100%; height: auto; margin: 0 auto; }
+  .modelbox p { color: var(--muted); font-size: 14px; margin: 24px 0; text-align: center; }
+  /* Graphviz schreibt die Farben aus models.py fest ins SVG. Da das Bild direkt im
+     Dokument steht, koennen wir sie im Dunkelmodus per CSS umbiegen - CSS gewinnt
+     gegen fill-/stroke-Attribute. */
+  @media (prefers-color-scheme: dark) {
+    .modelbox svg [fill="#eef2ff"] { fill: var(--node); }
+    .modelbox svg [fill="#ffffff"] { fill: var(--card); }
+    .modelbox svg [fill="#1a1d21"] { fill: var(--text); }
+    .modelbox svg [fill="#94a3b8"] { fill: var(--edge); }
+    .modelbox svg [fill="#4b5563"] { fill: var(--muted); }
+    .modelbox svg [stroke="#c7d2fe"] { stroke: var(--node-line); }
+    .modelbox svg [stroke="#94a3b8"] { stroke: var(--edge); }
+    .modelbox svg [stroke="#6b7280"] { stroke: var(--muted); }
+    .modelbox svg [stroke="#4b5563"] { stroke: var(--muted); }
+  }
+  .node rect { fill: var(--node); stroke: var(--node-line); stroke-width: 1.4; }
   .node.terminal rect { fill: var(--card); stroke: var(--muted); stroke-dasharray: 4 3; }
   .node text { fill: var(--text); font-size: 13px; }
   .node .count { fill: var(--muted); font-size: 11px; }
@@ -138,18 +183,53 @@
     <div class="body">
       <div class="tiles" id="tiles"></div>
 
+      <h3 class="sec">Welche Schritte kommen vor?</h3>
+      <div class="tablebox">
+        <table class="acts">
+          <thead><tr>
+            <th>Aktivität</th>
+            <th class="numeric">Ereignisse</th>
+            <th class="numeric">Fälle</th>
+            <th class="numeric">Ø je Fall</th>
+          </tr></thead>
+          <tbody id="activities"></tbody>
+        </table>
+      </div>
+      <p class="legend">
+        „Ø je Fall“ über 1,0 heißt: Der Schritt kommt im selben Fall mehrfach vor &ndash;
+        ein erster Hinweis auf Nacharbeit.
+      </p>
+
       <h3 class="sec">Prozessmodell</h3>
       <div class="mapbar">
+        <div class="switch" id="viewSwitch">
+          <button type="button" class="active" data-view="map">Prozesslandkarte</button>
+          <button type="button" data-view="bpmn">BPMN</button>
+          <button type="button" data-view="petri">Petri-Netz</button>
+        </div>
+      </div>
+      <div class="mapbar" id="detailBar">
         <label for="detail">Detailgrad</label>
         <input type="range" id="detail" min="0.2" max="1" step="0.1" value="1">
         <span class="tag" id="mapInfo"></span>
       </div>
-      <div class="mapbox"><svg id="graph"></svg></div>
-      <p class="legend">
+      <div class="mapbox" id="mapBox"><svg id="graph"></svg></div>
+      <div class="modelbox" id="modelBox" hidden></div>
+      <p class="legend" id="legendMap">
         Jeder Kasten ist eine Aktivität, die Zahl darunter sagt, wie oft sie vorkommt.
         Pfeile zeigen, welche Aktivität direkt auf welche folgt; dicker heißt häufiger.
         <span style="color:var(--loop)">Orange gestrichelte Pfeile</span> laufen zurück &ndash;
         dort wird etwas wiederholt.
+      </p>
+      <p class="legend" id="legendBpmn" hidden>
+        BPMN in der Standardnotation, entdeckt mit dem Inductive Miner. Rauten sind
+        Verzweigungen: „×“ heißt entweder/oder, „+“ heißt parallel. Anders als die
+        Prozesslandkarte zeigt BPMN ein Modell des Prozesses, nicht die gezählten Pfade.
+      </p>
+      <p class="legend" id="legendPetri" hidden>
+        Petri-Netz aus demselben Miner. Kreise sind Stellen, Rechtecke sind Transitionen;
+        schwarze Rechtecke sind unsichtbare Schritte, die nur das Modell braucht.
+        Diese Form ist die Grundlage fürs Conformance Checking.
       </p>
     </div>
   </section>
@@ -289,11 +369,76 @@ async function showOverview(log) {
       tile.append(b, span);
       return tile;
     }));
+    showActivities(s);
     $("insights").replaceChildren();
     show($("step2"));
     show($("step3"));
-    await loadProcessMap();
+    setView("map");
   } catch (err) { msg(err.message, true); }
+}
+
+function showActivities(summary) {
+  const rows = Object.entries(summary.activity_counts)
+    .map(([name, count]) => [name, count, summary.activity_cases[name] || 0])
+    .sort((a, b) => b[1] - a[1]);
+  $("activities").replaceChildren(...rows.map(([name, count, cases]) => {
+    const tr = document.createElement("tr");
+    tr.insertCell().textContent = name;
+    const perCase = cases
+      ? (count / cases).toLocaleString("de", { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+      : "–";
+    for (const value of [count.toLocaleString("de"), cases.toLocaleString("de"), perCase]) {
+      const td = tr.insertCell();
+      td.className = "numeric";
+      td.textContent = value;
+    }
+    return tr;
+  }));
+}
+
+// --- Umschalter zwischen den Ansichten -----------------------------------
+let currentView = "map";
+
+$("viewSwitch").onclick = (e) => {
+  const button = e.target.closest("button");
+  if (button) setView(button.dataset.view);
+};
+
+function setView(view) {
+  currentView = view;
+  for (const b of $("viewSwitch").children) b.classList.toggle("active", b.dataset.view === view);
+  const isMap = view === "map";
+  show($("detailBar"), isMap);
+  show($("mapBox"), isMap);
+  show($("modelBox"), !isMap);
+  show($("legendMap"), isMap);
+  show($("legendBpmn"), view === "bpmn");
+  show($("legendPetri"), view === "petri");
+  if (isMap) loadProcessMap(); else loadModel(view);
+}
+
+async function loadModel(kind) {
+  const box = $("modelBox");
+  const note = document.createElement("p");
+  note.textContent = "Modell wird berechnet …";
+  box.replaceChildren(note);
+  try {
+    // Das SVG wird direkt ins Dokument gehaengt statt als <img> geladen.
+    // Nur so greifen die Farben der Seite, etwa im Dunkelmodus.
+    const res = await fetch("/api/logs/" + logId + "/model/" + kind);
+    if (!res.ok) throw new Error("Status " + res.status);
+    const doc = new DOMParser().parseFromString(await res.text(), "image/svg+xml");
+    const svg = doc.querySelector("svg");
+    if (!svg) throw new Error("Kein SVG erhalten");
+    // Graphviz setzt eine feste Groesse in Punkt; die natuerliche Breite steht
+    // in der viewBox und bestimmt, wie weit wir skalieren duerfen.
+    const viewBox = (svg.getAttribute("viewBox") || "").split(/[\s,]+/).map(Number);
+    fitDiagram(svg, viewBox[2] || svg.width?.baseVal?.value || 800);
+    if (currentView === kind) box.replaceChildren(svg);
+  } catch (err) {
+    note.textContent = "Das Modell konnte nicht gezeichnet werden ("
+      + err.message + "). Meist fehlt dafür Graphviz auf dem Server.";
+  }
 }
 
 $("detail").oninput = () => { if (logId) loadProcessMap(); };
@@ -313,7 +458,18 @@ async function loadProcessMap() {
 // 1. Rueckwaertskanten (Schleifen) finden, 2. Knoten in Ebenen einteilen,
 // 3. Reihenfolge je Ebene so waehlen, dass sich wenig Pfeile kreuzen.
 const SVG_NS = "http://www.w3.org/2000/svg";
-const NODE_H = 34, LAYER_GAP = 92, NODE_GAP = 22, PAD = 24, CHAR_W = 7, MAX_LABEL = 26;
+const MIN_SCALE = 0.7;  // darunter wird lieber gescrollt als weiter verkleinert
+
+// Groesse festlegen: passt es, natuerliche Groesse; sonst bis 70 % schrumpfen.
+function fitDiagram(svg, naturalWidth) {
+  svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+  svg.removeAttribute("width");
+  svg.removeAttribute("height");
+  svg.classList.add("diagram");
+  svg.style.maxWidth = Math.round(naturalWidth) + "px";
+  svg.style.minWidth = Math.round(naturalWidth * MIN_SCALE) + "px";
+}
+const NODE_H = 34, LAYER_GAP = 42, NODE_GAP = 18, PAD = 14, CHAR_W = 7, MAX_LABEL = 26;
 
 function el(tag, attrs = {}) {
   const node = document.createElementNS(SVG_NS, tag);
@@ -405,26 +561,36 @@ function drawProcessMap(map) {
   const filled = rows.filter(Boolean);
   orderWithinLayers(filled, edges);
 
-  // Positionen berechnen
+  // Positionen: Jede Ebene ist eine Spalte, die Knoten darin stehen untereinander.
+  // Links nach rechts, weil Prozesse meist lang und schmal sind und so die
+  // Bildschirmbreite nutzen - genau wie BPMN und Petri-Netz.
+  const nodeWidth = (n) => Math.min(240, Math.max(96, n.label.length * CHAR_W + 30));
   const box = new Map();
-  let width = 0;
-  filled.forEach((row, i) => {
-    const widths = row.map((n) => Math.min(240, Math.max(96, n.label.length * CHAR_W + 30)));
-    const rowWidth = widths.reduce((a, b) => a + b, 0) + NODE_GAP * (row.length - 1);
-    width = Math.max(width, rowWidth);
-    let x = 0;
+  let cursor = PAD;
+  let column = 0;
+  filled.forEach((row) => {
+    const colWidth = Math.max(...row.map(nodeWidth));
+    const colHeight = row.length * NODE_H + (row.length - 1) * NODE_GAP;
+    column = Math.max(column, colHeight);
     row.forEach((n, j) => {
-      box.set(n.id, { x, y: PAD + i * LAYER_GAP, w: widths[j], row: i, offset: rowWidth });
-      x += widths[j] + NODE_GAP;
+      const w = nodeWidth(n);
+      box.set(n.id, {
+        x: cursor + (colWidth - w) / 2,
+        y: j * (NODE_H + NODE_GAP),
+        w, colHeight,
+      });
     });
+    cursor += colWidth + LAYER_GAP;
   });
-  for (const b of box.values()) b.x += PAD + (width - b.offset) / 2;
+  // Spalten mittig ausrichten
+  for (const b of box.values()) b.y += PAD + (column - b.colHeight) / 2;
 
-  const height = PAD * 2 + filled.length * LAYER_GAP - (LAYER_GAP - NODE_H);
-  const total = width + PAD * 2 + 70;  // Platz rechts fuer Schleifen
-  svg.setAttribute("width", total);
-  svg.setAttribute("height", height);
+  const width = cursor - LAYER_GAP + PAD;
+  const loopLine = PAD + column + 40;        // Schleifen laufen unter dem Graphen zurück
+  const height = loopLine + (back.size ? 30 : PAD);
+  const total = width;
   svg.setAttribute("viewBox", "0 0 " + total + " " + height);
+  fitDiagram(svg, total);
 
   const defs = el("defs");
   for (const [id, color] of [["arrow", "var(--edge)"], ["arrowLoop", "var(--loop)"]]) {
@@ -441,18 +607,20 @@ function drawProcessMap(map) {
     const a = box.get(e.source), b = box.get(e.target);
     const isLoop = back.has(e.source + "\u0000" + e.target);
     const g = el("g", { class: "edge" + (isLoop ? " loop" : "") });
-    const x1 = a.x + a.w / 2, y1 = a.y + NODE_H;
-    const x2 = b.x + b.w / 2, y2 = b.y;
     let d, labelX, labelY;
     if (isLoop) {
-      const side = width + PAD + 40;
-      d = "M" + (a.x + a.w) + "," + (a.y + NODE_H / 2) + " C" + side + "," + (a.y + NODE_H / 2)
-        + " " + side + "," + (b.y + NODE_H / 2) + " " + (b.x + b.w) + "," + (b.y + NODE_H / 2);
-      labelX = side - 10; labelY = (a.y + b.y) / 2 + NODE_H / 2;
+      // Rückwärts: unter dem Graphen entlang, vom unteren Rand zum unteren Rand
+      const ax = a.x + a.w / 2, bx = b.x + b.w / 2;
+      d = "M" + ax + "," + (a.y + NODE_H) + " C" + ax + "," + loopLine
+        + " " + bx + "," + loopLine + " " + bx + "," + (b.y + NODE_H);
+      labelX = (ax + bx) / 2; labelY = loopLine - 4;
     } else {
-      const mid = (y1 + y2) / 2;
-      d = "M" + x1 + "," + y1 + " C" + x1 + "," + mid + " " + x2 + "," + mid + " " + x2 + "," + y2;
-      labelX = (x1 + x2) / 2 + 6; labelY = mid;
+      // Vorwärts: von der rechten Kante zur linken Kante des nächsten Kastens
+      const x1 = a.x + a.w, y1 = a.y + NODE_H / 2;
+      const x2 = b.x, y2 = b.y + NODE_H / 2;
+      const mid = (x1 + x2) / 2;
+      d = "M" + x1 + "," + y1 + " C" + mid + "," + y1 + " " + mid + "," + y2 + " " + x2 + "," + y2;
+      labelX = mid; labelY = (y1 + y2) / 2 - 5;
     }
     const path = el("path", { d, "marker-end": isLoop ? "url(#arrowLoop)" : "url(#arrow)",
       "stroke-width": (1 + 3 * (e.count / maxCount)).toFixed(1) });

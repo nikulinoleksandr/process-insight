@@ -1,4 +1,5 @@
 from app.core.importing.xes import read_xes
+from app.core.process.models import render_model
 from app.core.process.process_map import END, START, build_process_map
 from app.core.process.stats import case_durations, summarize
 from app.core.process.variants import top_variants
@@ -55,3 +56,31 @@ def test_top_variants_sorted_by_frequency():
     variants = top_variants(log)
     assert variants[0].activities == ["A", "B"]
     assert variants[0].case_count == 2
+
+
+def test_activity_counts_and_cases():
+    """Wie oft eine Aktivität vorkommt und in wie vielen Fällen - das sind zwei Zahlen."""
+    log = make_log([("1", "A", 0), ("1", "A", 1), ("1", "B", 2), ("2", "A", 0)])
+    summary = summarize(log)
+    assert summary.activity_counts == {"A": 3, "B": 1}
+    assert summary.activity_cases == {"A": 2, "B": 1}
+
+
+def test_render_model_returns_svg():
+    log = read_xes(RUNNING_EXAMPLE).events
+    for kind in ("bpmn", "petri"):
+        svg = render_model(log, kind)
+        assert "<svg" in svg
+        assert "register request" in svg
+
+
+def test_render_model_uses_project_colours():
+    """Die Modelle sollen aussehen wie die Prozesslandkarte, nicht wie Graphviz-Standard."""
+    log = read_xes(RUNNING_EXAMPLE).events
+    for kind in ("bpmn", "petri"):
+        svg = render_model(log, kind)
+        assert "#eef2ff" in svg  # Aktivitäten in der Farbe der Landkarte
+        assert "#94a3b8" in svg  # Kanten
+        assert "Segoe UI" in svg
+        assert 'fill="white"' not in svg  # keine Vorgabefarbe von pm4py mehr
+        assert "Times" not in svg
