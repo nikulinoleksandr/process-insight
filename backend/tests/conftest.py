@@ -31,13 +31,42 @@ def make_log(rows: list[tuple]) -> pd.DataFrame:
 
 @pytest.fixture
 def client(tmp_path):
-    settings = Settings(storage_dir=tmp_path / "storage", demo_log_path=RUNNING_EXAMPLE)
+    # anthropic_api_key=None: Tests sollen nie die echte KI aufrufen, auch wenn
+    # auf dem Rechner ein Schlüssel hinterlegt ist.
+    settings = Settings(
+        storage_dir=tmp_path / "storage", demo_log_path=RUNNING_EXAMPLE, anthropic_api_key=None
+    )
     with TestClient(create_app(settings)) as c:
         yield c
 
 
 @pytest.fixture
+def fake_explainer():
+    from app.llm.explainer import FakeExplainer
+
+    return FakeExplainer()
+
+
+@pytest.fixture
+def ai_client(tmp_path, fake_explainer):
+    """Wie client, aber mit einer KI-Attrappe statt der echten Claude API."""
+    settings = Settings(
+        storage_dir=tmp_path / "storage",
+        demo_log_path=RUNNING_EXAMPLE,
+        anthropic_api_key=None,
+        llm_requests_per_hour=3,
+    )
+    with TestClient(create_app(settings, explainer=fake_explainer)) as c:
+        yield c
+
+
+@pytest.fixture
 def small_upload_client(tmp_path):
-    settings = Settings(storage_dir=tmp_path / "storage", demo_log_path=None, max_upload_mb=0)
+    settings = Settings(
+        storage_dir=tmp_path / "storage",
+        demo_log_path=None,
+        max_upload_mb=0,
+        anthropic_api_key=None,
+    )
     with TestClient(create_app(settings)) as c:
         yield c

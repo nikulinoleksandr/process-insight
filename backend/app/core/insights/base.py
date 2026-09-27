@@ -88,6 +88,17 @@ def pct(share: float) -> str:
     return f"{share * 100:.1f} %".replace(".", ",")
 
 
+def duration(seconds: float, dative: bool = False) -> str:
+    """Passende Einheit wählen: "45 Minuten", "3,5 Stunden", "12,0 Tage"."""
+    if seconds < 3600:
+        minutes = round(seconds / 60)
+        return f"{minutes} {'Minute' if minutes == 1 else 'Minuten'}"
+    if seconds < 86400:
+        value = f"{seconds / 3600:.1f}".replace(".", ",")
+        return f"{value} Stunden"
+    return days(seconds, dative)
+
+
 def days(seconds: float, dative: bool = False) -> str:
     """Formatiert Sekunden als Tage, z.B. '6,0 Tage' (dative=True: '6,0 Tagen')."""
     value = f"{seconds / 86400:.1f}".replace(".", ",")

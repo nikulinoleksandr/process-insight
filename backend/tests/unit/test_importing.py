@@ -63,3 +63,40 @@ def test_mapping_with_unknown_column_fails(tmp_path):
     path.write_text("a,b,c\n1,A,2024-01-01\n")
     with pytest.raises(LogFormatError, match="nicht in der Datei"):
         read_csv(path, ColumnMapping(case="a", activity="b", timestamp="zeit"))
+
+
+def test_lifecycle_keeps_only_complete_events():
+    df = pd.DataFrame(
+        {
+            CASE: ["1"] * 4,
+            ACTIVITY: ["A", "A", "B", "B"],
+            TIMESTAMP: [
+                "2024-01-01 10:00",
+                "2024-01-01 11:00",
+                "2024-01-01 12:00",
+                "2024-01-01 13:00",
+            ],
+            "lifecycle:transition": ["start", "complete", "START", "COMPLETE"],
+        }
+    )
+    result = normalize(df)
+    assert list(result.events[ACTIVITY]) == ["A", "B"]
+    assert result.ignored_lifecycle_events == 2
+
+
+def test_lifecycle_column_in_csv_is_detected(tmp_path):
+    path = tmp_path / "log.csv"
+    path.write_text(
+        "id,step,time,lifecycle\n1,A,2024-01-01 10:00,start\n1,A,2024-01-01 11:00,complete\n"
+    )
+    events = read_csv(path, ColumnMapping(case="id", activity="step", timestamp="time")).events
+    assert len(events) == 1
+
+
+def test_xes_with_doctype_is_rejected(tmp_path):
+    path = tmp_path / "evil.xes"
+    path.write_text(
+        '<?xml version="1.0"?><!DOCTYPE log [<!ENTITY x SYSTEM "file:///etc/passwd">]><log/>'
+    )
+    with pytest.raises(LogFormatError, match="DOCTYPE"):
+        read_xes(path)

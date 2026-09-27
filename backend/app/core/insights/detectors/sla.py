@@ -4,7 +4,7 @@ import pandas as pd
 from pydantic import BaseModel, Field, model_validator
 
 from app.core.columns import CASE, TIMESTAMP
-from app.core.insights.base import Detector, Insight, days, pct, severity_by_share
+from app.core.insights.base import Detector, Insight, days, duration, pct, severity_by_share
 from app.core.process.stats import case_durations
 
 
@@ -47,7 +47,7 @@ class SlaDetector(Detector):
             title = f"Fristüberschreitung: Fälle über {days(threshold, dative=True)}"
             summary = (
                 f"{len(affected)} von {total} Fällen ({pct(share)}) dauern länger als "
-                f"{days(threshold)}. Der Median liegt bei {days(median, dative=True)}."
+                f"{days(threshold)}. Der Median liegt bei {duration(median, dative=True)}."
             )
         else:
             threshold = float(durations.quantile(config.percentile))
@@ -55,15 +55,17 @@ class SlaDetector(Detector):
             # Wie viel langsamer sind die langsamen Fälle als ein typischer Fall?
             slow_median = float(affected.median()) if not affected.empty else 0.0
             ratio = slow_median / median if median > 0 else 0.0
-            if ratio >= config.high_ratio:
-                severity = "high"
-            elif ratio >= config.medium_ratio:
-                severity = "medium"
-            else:
-                severity = "low"
+            if ratio < config.medium_ratio:
+                # Die langsamen Fälle sind kaum langsamer als ein typischer Fall. Irgendein
+                # Zehntel ist immer das langsamste; das allein ist kein Befund.
+                return []
+            # Ohne vorgegebene Frist wissen wir nicht, ob "lang" auch "zu lang" ist.
+            # Deshalb höchstens "mittel"; mit einer Frist in Tagen kann es "hoch" werden.
+            severity = "medium" if ratio >= config.high_ratio else "low"
             rule = (
-                f"hoch, wenn die langsamen Fälle im Median mindestens {config.high_ratio:g}-mal "
-                f"so lange dauern wie ein typischer Fall, mittel ab {config.medium_ratio:g}-mal"
+                f"mittel, wenn die langsamen Fälle im Median mindestens {config.high_ratio:g}-mal "
+                f"so lange dauern wie ein typischer Fall, niedrig ab {config.medium_ratio:g}-mal, "
+                f"darunter kein Befund; höher nur mit einer festen Frist in den Einstellungen"
             )
             ratio_text = f"{ratio:.1f}".replace(".", ",")
             title = (
@@ -72,10 +74,10 @@ class SlaDetector(Detector):
                 else f"{len(affected)} auffällig langsame Fälle"
             )
             summary = (
-                f"{len(affected)} von {total} Fällen dauern länger als {days(threshold)} "
+                f"{len(affected)} von {total} Fällen dauern länger als {duration(threshold)} "
                 f"(langsamer als {pct(config.percentile)} aller Fälle). Im Median brauchen sie "
-                f"{days(slow_median)}, das {ratio_text}-Fache eines typischen Falls "
-                f"({days(median)})."
+                f"{duration(slow_median)}, das {ratio_text}-Fache eines typischen Falls "
+                f"({duration(median)})."
             )
 
         if affected.empty:

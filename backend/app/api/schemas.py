@@ -30,6 +30,7 @@ class LogOut(BaseModel):
     n_activities: int | None = None
     has_resource: bool | None = None
     dropped_rows: int | None = None
+    ignored_lifecycle_events: int | None = None
     csv_preview: CsvPreviewOut | None = None
 
 

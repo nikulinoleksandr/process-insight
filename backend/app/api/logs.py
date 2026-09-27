@@ -6,10 +6,10 @@ from app.api.deps import get_log_service
 from app.api.schemas import CsvPreviewOut, LogOut, MappingIn
 from app.core.importing.normalize import ColumnMapping
 from app.core.process.models import ModelKind, render_model
-from app.core.process.process_map import ProcessMap, build_process_map
-from app.core.process.stats import LogSummary, summarize
+from app.core.process.process_map import ProcessMap, all_edges, build_process_map
+from app.core.process.stats import LogSummary
 from app.core.process.variants import Variant, top_variants
-from app.services.errors import BadInputError
+from app.services.errors import BadInputError, ConflictError
 from app.services.log_service import LogService
 
 router = APIRouter(prefix="/logs", tags=["Logs"])
@@ -50,7 +50,7 @@ def get_log(log_id: str, logs: Logs) -> LogOut:
 
 @router.get("/{log_id}/summary", response_model=LogSummary, summary="Kennzahlen eines Logs")
 def get_summary(log_id: str, logs: Logs) -> LogSummary:
-    return summarize(logs.events(log_id))
+    return logs.summary(log_id)
 
 
 @router.get("/{log_id}/process-map", response_model=ProcessMap, summary="Prozesslandkarte")
@@ -81,6 +81,7 @@ def get_process_map(
         max_edges,
         focus_nodes=set(focus_node or []),
         focus_edges=edges,
+        edges=logs.derived(log_id, "all_edges", all_edges),
     )
 
 
@@ -104,4 +105,13 @@ def get_model(log_id: str, kind: ModelKind, logs: Logs) -> Response:
 def get_variants(
     log_id: str, logs: Logs, limit: Annotated[int, Query(ge=1, le=200)] = 20
 ) -> list[Variant]:
-    return top_variants(logs.events(log_id), limit)
+    return logs.derived(log_id, "top_variants", lambda ev: top_variants(ev, 200))[:limit]
+
+
+@router.delete("/{log_id}", status_code=204, summary="Log und alle Analysen dazu löschen")
+def delete_log(log_id: str, logs: Logs) -> Response:
+    record = logs.get(log_id)
+    if record["is_demo"]:
+        raise ConflictError("Das Demo-Log kann nicht gelöscht werden.")
+    logs.delete(log_id)
+    return Response(status_code=204)

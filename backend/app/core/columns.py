@@ -4,5 +4,6 @@ CASE = "case:concept:name"
 ACTIVITY = "concept:name"
 TIMESTAMP = "time:timestamp"
 RESOURCE = "org:resource"
+LIFECYCLE = "lifecycle:transition"
 
 REQUIRED_COLUMNS = (CASE, ACTIVITY, TIMESTAMP)

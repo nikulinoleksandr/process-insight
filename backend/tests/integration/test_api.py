@@ -31,7 +31,7 @@ def test_full_flow_with_xes(client):
     analysis = client.get(f"/api/analyses/{started.json()['id']}").json()
     assert analysis["status"] == "done"
     titles = [i["title"] for i in analysis["result"]["insights"]]
-    assert "Nacharbeit bei „check ticket“" in titles
+    assert "Nacharbeit bei „check ticket“ und „decide“" in titles
 
     insight = next(i for i in analysis["result"]["insights"] if i["detector_id"] == "rework")
     cases = client.get(
@@ -166,9 +166,80 @@ def test_cases_contain_trace(client):
     started = client.post(f"/api/logs/{log_id}/analyses").json()
     analysis = client.get(f"/api/analyses/{started['id']}").json()
     insight = next(
-        i for i in analysis["result"]["insights"] if i["evidence"].get("activity") == "check ticket"
+        i
+        for i in analysis["result"]["insights"]
+        if "check ticket" in i["evidence"].get("activities", [])
     )
     page = client.get(f"/api/analyses/{analysis['id']}/insights/{insight['id']}/cases").json()
     first = page["cases"][0]
     assert first["trace"][0] == "register request"
     assert first["trace"].count("check ticket") >= 2
+
+
+def _first_insight(client):
+    log_id = client.get("/api/demo").json()["id"]
+    started = client.post(f"/api/logs/{log_id}/analyses").json()
+    analysis = client.get(f"/api/analyses/{started['id']}").json()
+    insight = analysis["result"]["insights"][0]
+    return f"/api/analyses/{analysis['id']}/insights/{insight['id']}/explanation", insight
+
+
+def test_explanation_without_key_falls_back(client):
+    assert client.get("/api/features").json()["ai_explanations"] is False
+    url, insight = _first_insight(client)
+    body = client.post(url).json()
+    assert body["source"] == "fallback"
+    assert body["explanation"] == insight["summary"]
+    assert "API-Schlüssel" in body["note"]
+
+
+def test_explanation_with_ai_is_cached(ai_client, fake_explainer):
+    assert ai_client.get("/api/features").json() == {"ai_explanations": True, "ai_model": "fake"}
+    url, _ = _first_insight(ai_client)
+    first = ai_client.post(url).json()
+    second = ai_client.post(url).json()
+    assert first["source"] == "ai" and first["cached"] is False
+    assert first["next_steps"]
+    assert second["cached"] is True
+    assert fake_explainer.calls == 1
+    ai_client.post(url, params={"refresh": True})
+    assert fake_explainer.calls == 2
+
+
+def test_explanation_rate_limit(ai_client):
+    url, _ = _first_insight(ai_client)
+    for _ in range(3):
+        assert ai_client.post(url, params={"refresh": True}).status_code == 200
+    blocked = ai_client.post(url, params={"refresh": True})
+    assert blocked.status_code == 429
+    assert "Zu viele" in blocked.json()["detail"]
+    assert ai_client.post(url).status_code == 200  # Zwischenspeicher zählt nicht
+
+
+def test_explanation_falls_back_when_ai_fails(ai_client, fake_explainer):
+    fake_explainer.fail = True
+    url, _ = _first_insight(ai_client)
+    body = ai_client.post(url).json()
+    assert body["source"] == "fallback"
+    assert "nicht erreichbar" in body["note"]
+
+
+def test_explanation_unknown_insight(client):
+    url, _ = _first_insight(client)
+    assert client.post(url.replace("/insights/", "/insights/x")).status_code == 404
+
+
+def test_delete_log_and_storage_info(client):
+    log = upload(client, "orders.csv", b"id;step;when\n1;A;2024-01-01\n").json()
+    info = client.get("/api/storage").json()
+    assert info["logs"] == 2 and info["retention_days"] == 7
+    assert client.delete(f"/api/logs/{log['id']}").status_code == 204
+    assert client.get(f"/api/logs/{log['id']}").status_code == 404
+    demo_id = client.get("/api/demo").json()["id"]
+    assert client.delete(f"/api/logs/{demo_id}").status_code == 409
+
+
+def test_uploading_same_file_twice_returns_same_log(client):
+    first = upload(client, "a.xes", RUNNING_EXAMPLE.read_bytes()).json()
+    second = upload(client, "b.xes", RUNNING_EXAMPLE.read_bytes()).json()
+    assert first["id"] == second["id"]

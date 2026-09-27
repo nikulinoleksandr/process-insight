@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from app.core.columns import ACTIVITY, CASE, REQUIRED_COLUMNS, RESOURCE, TIMESTAMP
+from app.core.columns import ACTIVITY, CASE, LIFECYCLE, REQUIRED_COLUMNS, RESOURCE, TIMESTAMP
 
 
 class LogFormatError(ValueError):
@@ -25,6 +25,7 @@ class ColumnMapping:
 class NormalizedLog:
     events: pd.DataFrame
     dropped_rows: int
+    ignored_lifecycle_events: int = 0  # z.B. "start"-Events, wenn es auch "complete" gibt
 
 
 def normalize(df: pd.DataFrame, mapping: ColumnMapping | None = None) -> NormalizedLog:
@@ -49,11 +50,29 @@ def normalize(df: pd.DataFrame, mapping: ColumnMapping | None = None) -> Normali
     before = len(df)
     df = df.dropna(subset=list(REQUIRED_COLUMNS))
     dropped = before - len(df)
+    df, ignored = _keep_completed(df)
     if df.empty:
         raise LogFormatError("Das Log enthält keine gültigen Events.")
 
     df = df.sort_values([CASE, TIMESTAMP], kind="stable").reset_index(drop=True)
-    return NormalizedLog(events=df, dropped_rows=dropped)
+    return NormalizedLog(events=df, dropped_rows=dropped, ignored_lifecycle_events=ignored)
+
+
+def _keep_completed(df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+    """Viele Logs (z.B. BPI 2012) haben pro Arbeitsschritt mehrere Events: "schedule",
+    "start" und "complete". Für die Analyse zählt jeder Schritt einmal, sonst sähe jeder
+    Schritt wie eine Wiederholung aus. Deshalb bleiben nur die "complete"-Events."""
+    if LIFECYCLE not in df.columns:
+        return df, 0
+    state = df[LIFECYCLE].astype("string").str.strip().str.lower()
+    is_complete = state == "complete"
+    if not is_complete.any() or is_complete.fillna(True).all():
+        return df, 0
+    keep = is_complete.fillna(True)  # Events ohne Angabe behalten
+    return df[keep.to_numpy()], int((~keep).sum())
+
+
+_LIFECYCLE_NAMES = {"lifecycle:transition", "lifecycle", "transition"}
 
 
 def _apply_mapping(df: pd.DataFrame, mapping: ColumnMapping) -> pd.DataFrame:
@@ -64,6 +83,10 @@ def _apply_mapping(df: pd.DataFrame, mapping: ColumnMapping) -> pd.DataFrame:
     }
     if mapping.resource:
         source_to_target[mapping.resource] = RESOURCE
+    # Eine Lifecycle-Spalte wird automatisch erkannt, sie muss nicht zugeordnet werden.
+    lifecycle = next((c for c in df.columns if c.strip().lower() in _LIFECYCLE_NAMES), None)
+    if lifecycle and lifecycle not in source_to_target:
+        source_to_target[lifecycle] = LIFECYCLE
 
     unknown = [src for src in source_to_target if src not in df.columns]
     if unknown:

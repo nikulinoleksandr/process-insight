@@ -15,3 +15,7 @@ class BadInputError(Exception):
 
 class TooLargeError(Exception):
     pass
+
+
+class RateLimitedError(Exception):
+    """Zu viele Anfragen in kurzer Zeit, z.B. an die KI."""

@@ -115,3 +115,12 @@ def test_process_map_focus_keeps_rare_edge_and_node():
     assert counts[("C", "D")] == 1
     assert ("A", "C") in counts  # stärkste eingehende Kante von C
     assert {"C", "D"} <= {n.id for n in focused.nodes}
+
+
+def test_case_variants_keys_are_equal_for_equal_sequences():
+    from app.core.process.variants import case_variants, decode_variant
+
+    log = make_log([("1", "A", 0), ("1", "B", 1), ("2", "A", 0), ("2", "B", 1), ("3", "B", 0)])
+    keys = case_variants(log)
+    assert keys["1"] == keys["2"] != keys["3"]
+    assert decode_variant(keys["1"], keys.attrs["activities"]) == ["A", "B"]

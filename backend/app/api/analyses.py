@@ -3,7 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Query
 
-from app.api.deps import get_analysis_service, get_log_service
+from app.api.deps import get_analysis_service, get_explanation_service, get_log_service
 from app.api.schemas import (
     AnalysisIn,
     AnalysisOut,
@@ -13,8 +13,10 @@ from app.api.schemas import (
     InsightOut,
 )
 from app.core.columns import ACTIVITY, CASE, TIMESTAMP
+from app.llm.schemas import ExplanationOut
 from app.services.analysis_service import AnalysisService
 from app.services.errors import ConflictError, NotFoundError
+from app.services.explanation_service import ExplanationService
 from app.services.log_service import LogService
 
 router = APIRouter(tags=["Analysen"])
@@ -102,3 +104,17 @@ def get_insight_cases(
         if cid in grouped.index
     ]
     return CasePage(total=insight.affected_case_count, offset=offset, limit=limit, cases=cases)
+
+
+@router.post(
+    "/analyses/{analysis_id}/insights/{insight_id}/explanation",
+    response_model=ExplanationOut,
+    summary="Insight von der KI erklären lassen, mit Lösungsvorschlägen",
+)
+def explain_insight(
+    analysis_id: str,
+    insight_id: str,
+    explanations: Annotated[ExplanationService, Depends(get_explanation_service)],
+    refresh: Annotated[bool, Query(description="Neu erzeugen statt Zwischenspeicher")] = False,
+) -> ExplanationOut:
+    return explanations.explain(analysis_id, insight_id, refresh=refresh)

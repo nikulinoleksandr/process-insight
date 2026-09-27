@@ -37,6 +37,7 @@ def build_process_map(
     max_edges: int | None = None,
     focus_nodes: set[str] | None = None,
     focus_edges: set[tuple[str, str]] | None = None,
+    edges: pd.DataFrame | None = None,
 ) -> ProcessMap:
     """Baut die Prozesslandkarte.
 
@@ -51,10 +52,11 @@ def build_process_map(
     die Oberfläche die Stelle eines Insights hervorheben, egal wie der Regler steht.
     """
     detail = min(max(detail, 0.0), 1.0)
-    edges = _all_edges(log)
+    if edges is None:  # kann vorberechnet übergeben werden (siehe all_edges)
+        edges = all_edges(log)
     kept = _filter_edges(edges, detail)
     if max_edges is not None:
-        # _all_edges sortiert absteigend nach Häufigkeit, _filter_edges behält die Reihenfolge.
+        # all_edges sortiert absteigend nach Häufigkeit, _filter_edges behält die Reihenfolge.
         kept = kept.head(max_edges).reset_index(drop=True)
     kept = _add_focus(edges, kept, focus_nodes or set(), focus_edges or set())
 
@@ -85,7 +87,9 @@ def build_process_map(
     )
 
 
-def _all_edges(log: pd.DataFrame) -> pd.DataFrame:
+def all_edges(log: pd.DataFrame) -> pd.DataFrame:
+    """Alle Kanten mit Häufigkeit und Wartezeit, absteigend sortiert. Hängt nur vom Log ab
+    und kann deshalb pro Log zwischengespeichert werden."""
     tr = transitions(log)
     inner = (
         tr.assign(wait_s=tr["wait"].dt.total_seconds())

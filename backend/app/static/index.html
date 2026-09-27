@@ -164,14 +164,32 @@
            color: var(--muted); }
   .pager button { padding: 4px 12px; font-size: 13px; }
 
+  .ai { margin-top: 12px; border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px;
+        background: var(--bg); }
+  .ai h4 { margin: 0 0 6px; font-size: 15px; }
+  .ai h5 { margin: 12px 0 4px; font-size: 13px; }
+  .ai p, .ai li { font-size: 14px; color: var(--text); max-width: 78ch; }
+  .ai ul { margin: 0; padding-left: 20px; }
+  .ai .badge { display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: .02em;
+               border: 1px solid var(--accent); color: var(--accent); border-radius: 999px;
+               padding: 1px 8px; margin-bottom: 8px; }
+  .ai .foot { margin-top: 10px; font-size: 12px; color: var(--muted); }
+  .ai .foot button { padding: 2px 10px; font-size: 12px; margin-left: 6px; }
+  .ai .warn { margin-top: 8px; font-size: 13px; color: var(--medium); }
+
   .settings { border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px;
               margin-bottom: 14px; max-width: 760px; }
   .settings summary { font-weight: 600; }
   .settings .field { margin: 14px 0; }
   .settings .field > span { display: block; font-size: 14px; font-weight: 600; }
   .settings .field small { display: block; color: var(--muted); font-size: 13px; margin: 2px 0 6px; }
-  .settings input[type=number] { font: inherit; width: 110px; padding: 6px; background: var(--card);
+  .settings input[type=number] { font: inherit; width: 150px; padding: 6px; background: var(--card);
                                  color: var(--text); border: 1px solid var(--line); border-radius: 6px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+  .chip { display: inline-flex; align-items: center; gap: 4px; font-size: 13px;
+          border: 1px solid var(--line); border-radius: 999px; padding: 2px 4px 2px 10px; }
+  .chip button { border: none; background: none; padding: 0 6px; font-size: 14px;
+                 color: var(--muted); }
   .pair { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; flex-wrap: wrap; }
   .pair select { width: auto; min-width: 180px; margin: 0; }
   .pair button { padding: 4px 10px; }
@@ -314,6 +332,27 @@
           <div class="fielderror" id="errRare" hidden></div>
         </div>
         <div class="field">
+          <span>Schritte, die sich planmäßig wiederholen</span>
+          <small>Werden nicht als Nacharbeit gemeldet, z.B. regelmäßige Messungen oder
+            Ratenzahlungen. Schritte, die sich in fast jedem Fall wiederholen, erkennt das
+            Tool auch selbst.</small>
+          <div class="chips" id="routineChips"></div>
+          <div class="pair">
+            <select id="routineSelect"></select>
+            <button type="button" id="routineAdd">Hinzufügen</button>
+          </div>
+        </div>
+        <div class="field">
+          <span>Gewollte Wartezeiten</span>
+          <small>Übergänge, bei denen Warten vorgesehen ist (z.B. eine gesetzliche Frist).
+            Sie werden nicht als Engpass gemeldet.</small>
+          <div class="chips" id="waitChips"></div>
+          <div class="pair">
+            <select id="waitFrom"></select> <span>→</span> <select id="waitTo"></select>
+            <button type="button" id="waitAdd">Hinzufügen</button>
+          </div>
+        </div>
+        <div class="field">
           <span>Vier-Augen-Prinzip</span>
           <small id="sodHint">Welche zwei Schritte darf nicht dieselbe Person im selben Fall
             erledigen? Zum Beispiel „Bestellung anlegen“ und „Bestellung freigeben“.</small>
@@ -338,6 +377,8 @@ let logId = null;
 let summary = null;     // Kennzahlen des aktuellen Logs (Aktivitäten, Ressourcen)
 let analysisId = null;
 let focus = null;       // { nodes: [...], edges: [[von, nach]], label } oder null
+let features = { ai_explanations: false, ai_model: null };
+api("/features").then((f) => { features = f; }).catch(() => {});
 
 function show(el, on = true) { el.hidden = !on; }
 
@@ -445,7 +486,11 @@ $("mapBtn").onclick = async () => {
 // --- Schritt 2: Kennzahlen und Prozessmodell -----------------------------
 async function showOverview(log) {
   try {
-    $("logName").textContent = log.name;
+    const ignored = log.ignored_lifecycle_events || 0;
+    $("logName").textContent = log.name + (ignored
+      ? " · " + count(ignored) + " Start- und Plan-Events wurden übersprungen, "
+        + "jeder Schritt zählt einmal (bei Abschluss)."
+      : "");
     const s = await api("/logs/" + logId + "/summary");
     summary = s;
     focus = null;
@@ -789,7 +834,56 @@ function drawProcessMap(map) {
 }
 
 // --- Schritt 3: Einstellungen ------------------------------------------------
+// Listen aus den Einstellungen. Die Knöpfe an den Befunden füllen sie ebenfalls.
+let routine = [];       // Aktivitätsnamen
+let ignoredWaits = [];  // [[von, nach], ...]
+
+function renderChips() {
+  const chip = (text, onRemove) => {
+    const c = document.createElement("span");
+    c.className = "chip";
+    c.append(text);
+    const x = document.createElement("button");
+    x.type = "button";
+    x.textContent = "×";
+    x.title = "Entfernen";
+    x.onclick = onRemove;
+    c.append(x);
+    return c;
+  };
+  $("routineChips").replaceChildren(...routine.map((a) =>
+    chip(a, () => { routine = routine.filter((r) => r !== a); renderChips(); })));
+  $("waitChips").replaceChildren(...ignoredWaits.map(([a, b]) =>
+    chip(a + " → " + b, () => {
+      ignoredWaits = ignoredWaits.filter(([x, y]) => !(x === a && y === b));
+      renderChips();
+    })));
+}
+
+function addRoutine(names) {
+  for (const n of names) if (!routine.includes(n)) routine.push(n);
+  renderChips();
+}
+
+function addIgnoredWait(a, b) {
+  if (!ignoredWaits.some(([x, y]) => x === a && y === b)) ignoredWaits.push([a, b]);
+  renderChips();
+}
+
+$("routineAdd").onclick = () => addRoutine([$("routineSelect").value]);
+$("waitAdd").onclick = () => {
+  if ($("waitFrom").value !== $("waitTo").value) addIgnoredWait($("waitFrom").value, $("waitTo").value);
+};
+
 function resetSettings() {
+  routine = [];
+  ignoredWaits = [];
+  for (const id of ["routineSelect", "waitFrom", "waitTo"]) {
+    $(id).replaceChildren();
+    activityOptions($(id));
+  }
+  if ($("waitTo").options.length > 1) $("waitTo").selectedIndex = 1;
+  renderChips();
   $("setSlaDays").value = "";
   $("setTopN").value = "3";
   $("setRare").value = "1";
@@ -847,8 +941,9 @@ function readConfig() {
   if (!ok) { $("settings").open = true; return null; }
 
   const config = {
-    bottleneck: { top_n: Number($("setTopN").value) },
+    bottleneck: { top_n: Number($("setTopN").value), ignore_transitions: ignoredWaits },
     rare_variants: { max_variant_share: Number($("setRare").value) / 100 },
+    rework: { routine_activities: routine },
   };
   if ($("setSlaDays").value !== "") config.sla = { max_days: Number($("setSlaDays").value) };
   const pairs = [...$("sodPairs").children].map((row) => {
@@ -899,6 +994,12 @@ $("analyzeBtn").onclick = async () => {
   }
 };
 
+function rerunWith(change) {
+  change();
+  msg("Einstellung übernommen (siehe „Einstellungen“). Die Analyse läuft neu …");
+  $("analyzeBtn").click();
+}
+
 // Welche Prüfungen gelaufen sind, und warum eine eventuell nicht lief.
 function showRuns(runs, names) {
   $("runs").replaceChildren(...runs.map((r) => {
@@ -938,6 +1039,11 @@ const METRICS = {
   involved_resources: ["Beteiligte Personen", count],
   rare_variant_count: ["Seltene Varianten", count],
   total_variant_count: ["Varianten insgesamt", count],
+  p90_wait_seconds: ["Wartezeit bei jedem zehnten Fall mindestens", duration],
+  repeat_rate: ["Anteil der Fälle mit Wiederholung", percent],
+  mean_executions: ["Ausführungen je Fall (Durchschnitt)",
+    (n) => Number(n).toLocaleString("de", { maximumFractionDigits: 1 })],
+  standard_coverage: ["Anteil der 10 häufigsten Abläufe", percent],
 };
 
 // Welche Stelle der Prozesslandkarte gehört zu einem Insight?
@@ -948,7 +1054,8 @@ function focusFor(insight) {
              label: ev.source + " → " + ev.target };
   }
   if (insight.detector_id === "rework") {
-    return { nodes: [ev.activity], edges: [], label: ev.activity };
+    const acts = ev.activities || [ev.activity];
+    return { nodes: acts, edges: [], label: acts.join(", ") };
   }
   if (insight.detector_id === "segregation_of_duties") {
     return { nodes: [ev.first, ev.second], edges: [], label: ev.first + " / " + ev.second };
@@ -985,6 +1092,30 @@ function insightCard(i) {
   detailsBtn.textContent = "Details und Fälle";
   actions.append(detailsBtn);
 
+  const aiBtn = document.createElement("button");
+  aiBtn.type = "button";
+  aiBtn.textContent = "Erklären und Lösungen vorschlagen";
+  aiBtn.title = features.ai_explanations
+    ? "Ein KI-Assistent erklärt den Befund und schlägt Lösungen vor"
+    : "KI ist nicht eingerichtet; es wird die feste Zusammenfassung gezeigt";
+  actions.append(aiBtn);
+
+  // Fachliches Wissen zurückgeben: "Das ist bei uns so gewollt."
+  const ev = i.evidence || {};
+  const teach = document.createElement("button");
+  teach.type = "button";
+  if (i.detector_id === "rework") {
+    teach.textContent = "Ist planmäßig, nicht mehr melden";
+    teach.title = "Diese Schritte dürfen sich wiederholen. Die Analyse läuft neu.";
+    teach.onclick = () => rerunWith(() => addRoutine(ev.activities || [ev.activity]));
+    actions.append(teach);
+  } else if (i.detector_id === "bottleneck") {
+    teach.textContent = "Wartezeit ist gewollt";
+    teach.title = "Z.B. eine gesetzliche Frist. Die Analyse läuft neu.";
+    teach.onclick = () => rerunWith(() => addIgnoredWait(ev.source, ev.target));
+    actions.append(teach);
+  }
+
   const target = focusFor(i);
   if (target) {
     const mapBtn = document.createElement("button");
@@ -1008,8 +1139,91 @@ function insightCard(i) {
     detailsBtn.textContent = panel.hidden ? "Details und Fälle" : "Details ausblenden";
   };
 
-  card.append(title, text, meta, actions, panel);
+  const aiBox = document.createElement("div");
+  aiBox.className = "ai";
+  aiBox.hidden = true;
+  aiBtn.onclick = async () => {
+    if (!aiBox.hidden && aiBox.dataset.done) { aiBox.hidden = true; return; }
+    aiBtn.disabled = true;
+    aiBox.hidden = false;
+    await loadExplanation(aiBox, i, false);
+    aiBtn.disabled = false;
+  };
+
+  card.append(title, text, meta, actions, aiBox, panel);
   return card;
+}
+
+async function loadExplanation(box, insight, refresh) {
+  box.textContent = features.ai_explanations
+    ? "Der KI-Assistent denkt nach …"
+    : "Erklärung wird geladen …";
+  try {
+    const url = "/analyses/" + analysisId + "/insights/" + insight.id + "/explanation"
+      + (refresh ? "?refresh=true" : "");
+    const e = await api(url, { method: "POST" });
+    renderExplanation(box, insight, e);
+    box.dataset.done = "1";
+  } catch (err) {
+    box.textContent = "Die Erklärung konnte nicht geladen werden: " + err.message;
+  }
+}
+
+function listSection(heading, items) {
+  const frag = document.createDocumentFragment();
+  if (!items.length) return frag;
+  const h = document.createElement("h5");
+  h.textContent = heading;
+  const ul = document.createElement("ul");
+  for (const item of items) {
+    const li = document.createElement("li");
+    li.textContent = item;
+    ul.append(li);
+  }
+  frag.append(h, ul);
+  return frag;
+}
+
+function renderExplanation(box, insight, e) {
+  const parts = [];
+  const isAi = e.source === "ai";
+  if (isAi) {
+    const badge = document.createElement("span");
+    badge.className = "badge";
+    badge.textContent = "KI-ASSISTENT";
+    parts.push(badge);
+  }
+  const h = document.createElement("h4");
+  h.textContent = e.headline;
+  const p = document.createElement("p");
+  p.textContent = e.explanation;
+  parts.push(h, p,
+    listSection("Mögliche Ursachen (Vermutungen, bitte prüfen)", e.possible_causes),
+    listSection("Lösungsvorschläge", e.next_steps));
+
+  if (e.unverified_numbers?.length) {
+    const warn = document.createElement("p");
+    warn.className = "warn";
+    warn.textContent = "Achtung: Diese Zahlen stammen nicht aus den gemessenen Kennzahlen "
+      + "und sind nicht belegt: " + e.unverified_numbers.join(", ");
+    parts.push(warn);
+  }
+
+  const foot = document.createElement("p");
+  foot.className = "foot";
+  if (isAi) {
+    foot.textContent = "Erstellt von " + e.model + (e.cached ? " (gespeicherte Antwort)" : "")
+      + ". Die KI kennt nur die Kennzahlen dieses Befunds, nicht Ihr Unternehmen.";
+    const again = document.createElement("button");
+    again.type = "button";
+    again.textContent = "Neu erzeugen";
+    again.onclick = () => loadExplanation(box, insight, true);
+    foot.append(again);
+  } else {
+    foot.textContent = e.note || "Ohne KI erstellt.";
+  }
+  parts.push(foot);
+  box.replaceChildren(...parts);
 }
 
 function buildPanel(panel, i, target) {
