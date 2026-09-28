@@ -57,7 +57,24 @@ class ClaudeExplainer:
         parsed = response.parsed_output
         if parsed is None:
             raise ExplainerError("Die KI hat keine gültige Antwort geliefert.")
-        return parsed
+        return clean(parsed)
+
+
+def clean(explanation: Explanation) -> Explanation:
+    """Leere Listeneinträge entfernen und »…« wieder als „…“ darstellen, wie in der Oberfläche."""
+
+    def text(value: str) -> str:
+        return value.strip().replace("»", "„").replace("«", "“")
+
+    def items(values: list[str]) -> list[str]:
+        return [text(v) for v in values if v.strip()]
+
+    return Explanation(
+        headline=text(explanation.headline),
+        explanation=text(explanation.explanation),
+        possible_causes=items(explanation.possible_causes),
+        next_steps=items(explanation.next_steps),
+    )
 
 
 class FakeExplainer:

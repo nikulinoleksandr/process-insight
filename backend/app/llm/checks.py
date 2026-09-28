@@ -29,8 +29,9 @@ def unverified_numbers(explanation: Explanation, payload: dict[str, Any]) -> lis
         value = _to_float(raw)
         if value <= SMALL_NUMBERS:
             continue
-        # Gerundete Angaben ("27 %" statt "26,6 %") gelten als belegt.
-        if any(abs(value - a) <= 0.051 or round(a) == value for a in allowed):
+        # Gerundete Angaben gelten als belegt: "27 %" statt "26,6 %", "fast 60 %" statt
+        # "59,2 %", "etwa 1.440" statt "1.438".
+        if any(abs(value - a) <= max(1.0, 0.02 * a) for a in allowed):
             continue
         if raw not in found:
             found.append(raw)

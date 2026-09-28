@@ -50,7 +50,7 @@ def _explanation(text: str) -> Explanation:
 
 def test_number_check_accepts_measured_and_rounded_numbers():
     payload = {"kennzahlen": {"Anteil": "26,6 %", "Fälle": "1.234"}}
-    ok = _explanation("Etwa 27 % bzw. 26,6 % der 1.234 Fälle, in 3 Schritten.")
+    ok = _explanation("Etwa 27 % bzw. 26,6 % der rund 1.230 von 1.234 Fällen, in 3 Schritten.")
     assert unverified_numbers(ok, payload) == []
 
 
@@ -68,3 +68,24 @@ def test_empty_api_key_means_no_ai(tmp_path):
     assert build_explainer(Settings(storage_dir=tmp_path, anthropic_api_key=None)) is None
     explainer = build_explainer(Settings(storage_dir=tmp_path, anthropic_api_key="sk-test"))
     assert explainer is not None and explainer.model == "claude-haiku-4-5-20251001"
+
+
+def test_payload_uses_guillemets_instead_of_german_quotes():
+    result = _analysis()
+    text = json.dumps(build_payload(result.insights[0], result.log_summary), ensure_ascii=False)
+    assert "„" not in text and "“" not in text
+
+
+def test_clean_removes_empty_items_and_restores_quotes():
+    from app.llm.explainer import clean
+
+    raw = Explanation(
+        headline=" »A« dauert lange ",
+        explanation="Text",
+        possible_causes=["Ursache", " ", ""],
+        next_steps=["»B« prüfen"],
+    )
+    cleaned = clean(raw)
+    assert cleaned.headline == "„A“ dauert lange"
+    assert cleaned.possible_causes == ["Ursache"]
+    assert cleaned.next_steps == ["„B“ prüfen"]

@@ -23,9 +23,9 @@ Ein Prozessgraph allein hilft dabei wenig. Bei echten Daten wird er schnell zu e
 - Automatische Schwachstellenanalyse mit fünf Detektoren: Nacharbeit, Engpässe, lange Durchlaufzeiten, Vier-Augen-Prinzip, seltene Varianten
 - Jede gefundene Schwachstelle ist nachvollziehbar: verständliche Kennzahlen, Liste der betroffenen Fälle, Hervorhebung im Prozessmodell
 - Einstellungen für die Analyse, z.B. eine Frist in Tagen oder die Aktivitätspaare für das Vier-Augen-Prinzip
+- KI-Assistent (Claude): erklärt auf Knopfdruck jede Schwachstelle in einfachen Worten und schlägt Lösungen vor. Zahlen im Text werden gegen die Daten geprüft; ohne API-Schlüssel läuft das Tool ohne KI weiter
 
 ## Nicht in Version 1
-- KI-Erklärungen der Schwachstellen (geplant für Version 2)
 - Benutzerkonten und Logins
 - Eigene Process-Mining-Algorithmen (dafür nutzen wir PM4Py)
 - Direkte Anbindung an Unternehmenssysteme wie SAP

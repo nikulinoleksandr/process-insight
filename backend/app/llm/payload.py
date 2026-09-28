@@ -56,7 +56,23 @@ METRICS = {
 MAX_ACTIVITIES = 25
 
 
+def _quotes(value: Any) -> Any:
+    """Deutsche Anführungszeichen „…“ durch »…« ersetzen. Das Modell übernimmt sonst „…"
+    mit geradem Schlusszeichen, und das beendet im JSON-Format mitten im Satz den Text."""
+    if isinstance(value, str):
+        return value.replace("„", "»").replace("“", "«")
+    if isinstance(value, dict):
+        return {k: _quotes(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_quotes(v) for v in value]
+    return value
+
+
 def build_payload(insight: Insight, summary: LogSummary) -> dict[str, Any]:
+    return _quotes(_build(insight, summary))
+
+
+def _build(insight: Insight, summary: LogSummary) -> dict[str, Any]:
     metrics = {}
     for key, value in insight.metrics.items():
         label, fmt = METRICS.get(key, (key, str))
@@ -69,7 +85,6 @@ def build_payload(insight: Insight, summary: LogSummary) -> dict[str, Any]:
             "kategorie": CATEGORIES.get(insight.category, insight.category),
             "schweregrad": SEVERITIES.get(insight.severity, insight.severity),
             "zusammenfassung": insight.summary,
-            "regel_fuer_schweregrad": insight.severity_rule,
             "betroffene_faelle": _count(insight.affected_case_count),
             "anteil_betroffener_faelle": _pct(insight.affected_case_share),
             "kennzahlen": metrics,
