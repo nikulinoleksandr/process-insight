@@ -18,6 +18,6 @@ __pycache__/
 .ipynb_checkpoints/
 
 # Backend: Laufzeitdaten und Werkzeug-Caches
-storage/
+/backend/storage/
 .pytest_cache/
 .ruff_cache/
